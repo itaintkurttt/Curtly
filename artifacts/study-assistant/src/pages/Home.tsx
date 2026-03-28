@@ -4,13 +4,15 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { FormattedOutput } from '@/components/formatted-output';
 import { QuizModal } from '@/components/quiz-modal';
+import { AskAIPanel } from '@/components/ask-ai-panel';
 import { exportToPdf, exportToDocx } from '@/lib/export';
 import { useAuth } from '@/hooks/use-auth';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   BookOpenText, Sparkles, Copy, Trash2, CheckCheck,
   FileText, AlertCircle, RefreshCw, Upload, FileUp, X, Loader2,
-  Archive, LogIn, LogOut, User, Save, FileDown, HelpCircle, Plus
+  Archive, LogIn, LogOut, User, Save, FileDown, HelpCircle, Plus,
+  Bot, Globe
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Archives from './Archives';
@@ -39,6 +41,15 @@ async function saveReviewer(data: { title: string; sourceText: string; content: 
   return res.json();
 }
 
+/** Extract a short topic string from reviewer output for web enhance */
+function extractTopic(output: string, input: string): string {
+  // Try to extract the first H1 heading
+  const h1 = output.match(/^#\s+(.+)$/m);
+  if (h1) return h1[1].trim().slice(0, 100);
+  // Fallback: first 80 chars of input
+  return input.trim().slice(0, 80);
+}
+
 export default function Home() {
   const { user, isLoading: authLoading, isAuthenticated, login, logout } = useAuth();
   const queryClient = useQueryClient();
@@ -49,14 +60,23 @@ export default function Home() {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [showQuiz, setShowQuiz] = useState(false);
+  const [showAskAI, setShowAskAI] = useState(false);
   const [exportState, setExportState] = useState<'idle' | 'pdf' | 'docx'>('idle');
   const [savingState, setSavingState] = useState<'idle' | 'saving' | 'saved'>('idle');
+
+  // Web-enhanced content state
+  const [webContent, setWebContent] = useState<string>('');
+  const [webSources, setWebSources] = useState<Array<{ title: string; url: string }>>([]);
+  const [webEnhancing, setWebEnhancing] = useState(false);
+  const [webError, setWebError] = useState<string | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { generate, clear, output, isGenerating, error } = useStudyStream();
   const [copied, setCopied] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Auto-scroll output during generation
   useEffect(() => {
     if (scrollRef.current && isGenerating) {
       const el = scrollRef.current;
@@ -64,6 +84,15 @@ export default function Home() {
       if (isNearBottom) el.scrollTop = el.scrollHeight;
     }
   }, [output, isGenerating]);
+
+  // Clear web content when output is cleared
+  useEffect(() => {
+    if (!output) {
+      setWebContent('');
+      setWebSources([]);
+      setWebError(null);
+    }
+  }, [output]);
 
   const parseFile = useCallback(async (uf: UploadedFile): Promise<string> => {
     const formData = new FormData();
@@ -131,19 +160,26 @@ export default function Home() {
 
   const handleGenerate = () => {
     if (!input.trim()) return;
+    setWebContent('');
+    setWebSources([]);
+    setWebError(null);
     generate(input);
   };
 
   const handleClear = () => {
     setInput("");
     setUploadedFiles([]);
+    setWebContent('');
+    setWebSources([]);
+    setWebError(null);
     clear();
     setSavingState('idle');
   };
 
   const handleCopy = () => {
     if (!output) return;
-    navigator.clipboard.writeText(output);
+    const fullContent = output + (webContent ? `\n\n${webContent}` : '');
+    navigator.clipboard.writeText(fullContent);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -153,7 +189,8 @@ export default function Home() {
     setExportState('pdf');
     try {
       const title = uploadedFiles[0]?.file.name.replace(/\.[^.]+$/, '') ?? 'reviewer';
-      await exportToPdf(output, title);
+      const fullContent = output + (webContent ? `\n\n${webContent}` : '');
+      await exportToPdf(fullContent, title);
     } finally {
       setExportState('idle');
     }
@@ -164,7 +201,8 @@ export default function Home() {
     setExportState('docx');
     try {
       const title = uploadedFiles[0]?.file.name.replace(/\.[^.]+$/, '') ?? 'reviewer';
-      await exportToDocx(output, title);
+      const fullContent = output + (webContent ? `\n\n${webContent}` : '');
+      await exportToDocx(fullContent, title);
     } finally {
       setExportState('idle');
     }
@@ -176,7 +214,8 @@ export default function Home() {
     try {
       const title = uploadedFiles[0]?.file.name.replace(/\.[^.]+$/, '') ??
         (input.slice(0, 60).trim() || 'Untitled Reviewer');
-      await saveReviewer({ title, sourceText: input, content: output });
+      const fullContent = output + (webContent ? `\n\n${webContent}` : '');
+      await saveReviewer({ title, sourceText: input, content: fullContent });
       setSavingState('saved');
       queryClient.invalidateQueries({ queryKey: ['reviewers'] });
       setTimeout(() => setSavingState('idle'), 2500);
@@ -184,6 +223,76 @@ export default function Home() {
       setSavingState('idle');
     }
   };
+
+  /** Fetch additional web-sourced content */
+  const handleWebEnhance = useCallback(async () => {
+    if (!output || webEnhancing) return;
+
+    setWebEnhancing(true);
+    setWebContent('');
+    setWebSources([]);
+    setWebError(null);
+
+    try {
+      const topic = extractTopic(output, input);
+
+      const res = await fetch('/api/study/web-enhance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ topic, reviewerContent: output.slice(0, 2000) }),
+      });
+
+      if (!res.ok) {
+        setWebError('Failed to fetch web sources. Please try again.');
+        return;
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) return;
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let accContent = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop() ?? '';
+
+        for (const part of parts) {
+          for (const line of part.split('\n')) {
+            if (!line.startsWith('data: ')) continue;
+            try {
+              const data = JSON.parse(line.slice(6));
+
+              if (data.sources) {
+                setWebSources(data.sources);
+              }
+
+              if (data.content) {
+                accContent += data.content;
+                setWebContent(accContent);
+              }
+
+              if (data.error) {
+                setWebError(data.error);
+              }
+            } catch {
+              // skip partial JSON
+            }
+          }
+        }
+      }
+    } catch {
+      setWebError('Network error. Please try again.');
+    } finally {
+      setWebEnhancing(false);
+    }
+  }, [output, input, webEnhancing]);
 
   const busy = isGenerating || uploadedFiles.some(f => f.status === 'parsing');
   const hasOutput = !!output;
@@ -230,10 +339,19 @@ export default function Home() {
         )}
       </AnimatePresence>
 
-      {/* Quiz Modal */}
+      {/* Modals */}
       <AnimatePresence>
         {showQuiz && output && (
-          <QuizModal content={output} onClose={() => setShowQuiz(false)} />
+          <QuizModal content={output + (webContent ? '\n\n' + webContent : '')} onClose={() => setShowQuiz(false)} />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showAskAI && (
+          <AskAIPanel
+            onClose={() => setShowAskAI(false)}
+            reviewerContent={output + (webContent ? '\n\n' + webContent : '')}
+          />
         )}
       </AnimatePresence>
 
@@ -511,7 +629,28 @@ export default function Home() {
                   ref={scrollRef}
                   className="flex-1 overflow-y-auto p-6 md:p-8 scroll-smooth"
                 >
-                  <FormattedOutput text={output} />
+                  <FormattedOutput
+                    text={output}
+                    webContent={webContent || undefined}
+                    webSources={webSources.length > 0 ? webSources : undefined}
+                  />
+
+                  {/* Web enhancing progress */}
+                  {webEnhancing && !webContent && (
+                    <div className="mt-6 flex items-center gap-2 text-sm text-blue-500 bg-blue-50 border border-blue-200/60 rounded-xl px-4 py-3">
+                      <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />
+                      Searching web sources and generating additional content...
+                    </div>
+                  )}
+
+                  {/* Web enhance error */}
+                  {webError && !webContent && (
+                    <div className="mt-6 flex items-center gap-2 text-sm text-destructive bg-destructive/5 border border-destructive/20 rounded-xl px-4 py-3">
+                      <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                      {webError}
+                    </div>
+                  )}
+
                   {isGenerating && (
                     <div className="flex items-center gap-1.5 mt-6 text-primary p-2">
                       <span className="w-2 h-2 bg-primary/60 rounded-full animate-pulse" />
@@ -553,6 +692,33 @@ export default function Home() {
                   exit={{ opacity: 0, y: 8 }}
                   className="flex flex-wrap gap-2"
                 >
+                  {/* Ask AI */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowAskAI(true)}
+                    className="gap-2 border-primary/30 text-primary hover:bg-primary/5"
+                  >
+                    <Bot className="w-4 h-4" />
+                    Ask AI
+                  </Button>
+
+                  {/* Web Enhance */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleWebEnhance}
+                    disabled={webEnhancing}
+                    className="gap-2 border-blue-400/40 text-blue-600 hover:bg-blue-50"
+                  >
+                    {webEnhancing ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Globe className="w-4 h-4" />
+                    )}
+                    {webContent ? 'Refresh Web Sources' : 'Add Web Sources'}
+                  </Button>
+
                   {/* Quiz */}
                   <Button
                     variant="outline"
@@ -612,28 +778,22 @@ export default function Home() {
                       ) : (
                         <Save className="w-4 h-4 text-primary" />
                       )}
-                      {savingState === 'saved' ? 'Saved!' : 'Save to Archive'}
-                    </Button>
-                  )}
-
-                  {!isAuthenticated && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={login}
-                      className="gap-2 text-muted-foreground"
-                    >
-                      <LogIn className="w-4 h-4" />
-                      Log in to save
+                      {savingState === 'saved' ? 'Saved!' : 'Save'}
                     </Button>
                   )}
                 </motion.div>
               )}
             </AnimatePresence>
           </section>
-
         </div>
       </main>
+
+      <footer className="relative z-10 border-t border-border/40 mt-auto">
+        <div className="container mx-auto px-4 lg:px-8 h-12 flex items-center justify-between text-xs text-muted-foreground">
+          <span className="font-serif font-medium text-foreground/60">Curtly</span>
+          <span>AI-powered study assistant</span>
+        </div>
+      </footer>
     </div>
   );
 }

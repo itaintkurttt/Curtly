@@ -3,31 +3,48 @@ import { openai } from "@workspace/integrations-openai-ai-server";
 
 const router: IRouter = Router();
 
-const QUIZ_SYSTEM_PROMPT = `You are a quiz generator. Given structured reviewer content (keyword-definition pairs grouped by topic), generate multiple choice questions.
+const QUIZ_SYSTEM_PROMPT = `You are an academic quiz generator for students. Given structured reviewer content, generate TWO sets of multiple choice questions.
 
-Rules:
-1. Generate 4-6 questions per major topic section (## heading).
-2. Each question must have exactly 4 answer choices labeled A, B, C, D.
-3. All answer choices must be plausible and closely related to the actual topic — no trick or obviously wrong answers.
-4. Only one answer is correct.
-5. Questions must test understanding of the keywords and definitions in the reviewer content.
-6. Do NOT ask meta questions about the document or reviewer format.
-7. Output ONLY valid JSON in this exact format — no extra text before or after:
+PART 1 — Reviewer-Based Questions (recall & comprehension):
+- 3–5 questions per major topic (## heading)
+- Directly test terms, definitions, and concepts from the reviewer
+- All 4 choices must be plausible and topic-related
+
+PART 2 — Situational & Application Questions:
+- 3–5 questions total (not per section) across the whole reviewer
+- Focus on APPLYING concepts to real scenarios, problem-solving, case analysis, or theory application
+- DO NOT just restate definitions — test higher-order thinking (e.g., "A company experiences X, which concept best explains why...")
+- Questions should feel like real exam situational/case-based questions
+- All 4 choices must be plausible (no obviously wrong answers)
+
+Output ONLY valid JSON in this exact structure (no extra text):
 
 {
-  "sections": [
-    {
-      "title": "Section Title",
-      "questions": [
-        {
-          "question": "Question text here?",
-          "choices": ["A. ...", "B. ...", "C. ...", "D. ..."],
-          "answer": "A",
-          "explanation": "Brief explanation of why A is correct."
-        }
-      ]
-    }
-  ]
+  "reviewerBased": {
+    "sections": [
+      {
+        "title": "Section Title",
+        "questions": [
+          {
+            "question": "Question text?",
+            "choices": ["A. ...", "B. ...", "C. ...", "D. ..."],
+            "answer": "A",
+            "explanation": "Brief explanation."
+          }
+        ]
+      }
+    ]
+  },
+  "situational": {
+    "questions": [
+      {
+        "question": "Scenario-based question...",
+        "choices": ["A. ...", "B. ...", "C. ...", "D. ..."],
+        "answer": "B",
+        "explanation": "Explanation of why B is correct in this context."
+      }
+    ]
+  }
 }`;
 
 router.post("/quiz/generate", async (req: Request, res: Response) => {
@@ -41,12 +58,12 @@ router.post("/quiz/generate", async (req: Request, res: Response) => {
   try {
     const completion = await openai.chat.completions.create({
       model: "gpt-5.2",
-      max_completion_tokens: 4096,
+      max_completion_tokens: 6000,
       messages: [
         { role: "system", content: QUIZ_SYSTEM_PROMPT },
         {
           role: "user",
-          content: `Generate a multiple choice quiz from this reviewer:\n\n${content}`,
+          content: `Generate a two-part quiz from this reviewer:\n\n${content}`,
         },
       ],
       response_format: { type: "json_object" },

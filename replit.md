@@ -62,7 +62,9 @@ Every package extends `tsconfig.base.json` which sets `composite: true`. The roo
 
 ### `artifacts/study-assistant` (`@workspace/study-assistant`)
 
-React 19 + Vite frontend. Pages: `Home.tsx` (main page), `Archives.tsx` (user's saved reviewers). Components: `FormattedOutput`, `QuizModal`. Hooks: `use-study-stream`, `use-auth`. Lib: `export.ts` (PDF/DOCX generation).
+React 19 + Vite frontend. Pages: `Home.tsx` (main page), `Archives.tsx` (user's saved reviewers). Components: `FormattedOutput` (renders reviewer + optional web-sourced section), `QuizModal` (two-part quiz: reviewer-based + situational), `AskAIPanel` (sliding Q&A chat with web search). Hooks: `use-study-stream`, `use-auth`. Lib: `export.ts` (PDF/DOCX generation).
+
+**Output action buttons**: Ask AI, Add Web Sources, Take Quiz, Export PDF/DOCX, Save.
 
 ### `artifacts/api-server` (`@workspace/api-server`)
 
@@ -71,6 +73,9 @@ Express 5 API server. Routes live in `src/routes/` and use `@workspace/api-zod` 
 - Entry: `src/index.ts` — reads `PORT`, starts Express
 - App setup: `src/app.ts` — mounts CORS, JSON/urlencoded parsing, routes at `/api`
 - Routes: `src/routes/index.ts` mounts sub-routers; `src/routes/health.ts` exposes `GET /health` (full path: `/api/health`)
+- `src/routes/ask.ts` — `POST /api/study/ask` (AI Q&A with web search, SSE stream) + `POST /api/study/web-enhance` (web-sourced reviewer supplement, SSE stream)
+- `src/routes/quiz.ts` — `POST /api/quiz/generate` (two-part quiz: reviewer-based sections + situational/application questions)
+- `src/lib/web-search.ts` — DuckDuckGo Instant Answers API + Wikipedia API for runtime web search (no API key required)
 - Depends on: `@workspace/db`, `@workspace/api-zod`
 - `pnpm --filter @workspace/api-server run dev` — run the dev server
 - `pnpm --filter @workspace/api-server run build` — production esbuild bundle (`dist/index.cjs`)
