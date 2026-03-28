@@ -155,7 +155,7 @@ export default function Home() {
             <div className="bg-primary/10 p-1.5 rounded-lg border border-primary/20">
               <BookOpenText className="w-5 h-5" />
             </div>
-            <span className="text-xl font-serif font-bold tracking-tight text-foreground">kurt AI</span>
+            <span className="text-xl font-serif font-bold tracking-tight text-foreground">KURT.exe</span>
           </div>
           <div className="flex items-center text-sm font-medium text-muted-foreground">
             Technical Study Assistant
