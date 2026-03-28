@@ -5,8 +5,8 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ReviewerItem } from "./reviewerItem";
 
-export interface ExtractStudyContentBody {
-  /** @minLength 1 */
-  text: string;
+export interface ReviewerListResponse {
+  reviewers: ReviewerItem[];
 }

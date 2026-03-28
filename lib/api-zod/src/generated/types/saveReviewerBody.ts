@@ -6,7 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface ExtractStudyContentBody {
+export interface SaveReviewerBody {
   /** @minLength 1 */
-  text: string;
+  title: string;
+  sourceText: string;
+  /** @minLength 1 */
+  content: string;
 }

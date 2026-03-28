@@ -6,7 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface ExtractStudyContentBody {
-  /** @minLength 1 */
-  text: string;
+export interface ReviewerItem {
+  id: number;
+  title: string;
+  content: string;
+  sourceText: string;
+  createdAt: Date;
 }

@@ -48,7 +48,21 @@ Every package extends `tsconfig.base.json` which sets `composite: true`. The roo
 - `pnpm run build` — runs `typecheck` first, then recursively runs `build` in all packages that define it
 - `pnpm run typecheck` — runs `tsc --build --emitDeclarationOnly` using project references
 
+## Features
+
+### Study Assistant (Curtly)
+- **Auth**: Replit Auth (OIDC/PKCE) — login/logout in header. Inline `useAuth` hook at `src/hooks/use-auth.ts`.
+- **Multiple file upload**: Users can upload multiple PDF/DOCX/PPTX files at once; each is parsed and text concatenated before generating a reviewer.
+- **Reviewer generation**: AI-powered (OpenAI gpt-5.2) keyword/definition reviewer via SSE streaming.
+- **Quiz mode**: AI generates multiple-choice questions from reviewer content; interactive answer selection with score and explanations.
+- **Export**: Export reviewer as PDF (jsPDF) or DOCX (docx library).
+- **Archives**: Logged-in users can save reviewers to their personal archive and reload them.
+
 ## Packages
+
+### `artifacts/study-assistant` (`@workspace/study-assistant`)
+
+React 19 + Vite frontend. Pages: `Home.tsx` (main page), `Archives.tsx` (user's saved reviewers). Components: `FormattedOutput`, `QuizModal`. Hooks: `use-study-stream`, `use-auth`. Lib: `export.ts` (PDF/DOCX generation).
 
 ### `artifacts/api-server` (`@workspace/api-server`)
 

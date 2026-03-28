@@ -3,24 +3,54 @@ import { useStudyStream } from '@/hooks/use-study-stream';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { FormattedOutput } from '@/components/formatted-output';
+import { QuizModal } from '@/components/quiz-modal';
+import { exportToPdf, exportToDocx } from '@/lib/export';
+import { useAuth } from '@/hooks/use-auth';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   BookOpenText, Sparkles, Copy, Trash2, CheckCheck,
-  FileText, AlertCircle, RefreshCw, Upload, FileUp, X, Loader2
+  FileText, AlertCircle, RefreshCw, Upload, FileUp, X, Loader2,
+  Archive, LogIn, LogOut, User, Save, FileDown, HelpCircle, Plus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import Archives from './Archives';
 
 const ACCEPTED_TYPES = ".pdf,.docx,.doc,.pptx,.ppt";
 const ACCEPTED_LABELS = "PDF, DOCX, PPTX";
 
 type InputMode = "text" | "file";
+type AppView = "home" | "archives";
+
+interface UploadedFile {
+  file: File;
+  status: 'pending' | 'parsing' | 'done' | 'error';
+  error?: string;
+  text?: string;
+}
+
+async function saveReviewer(data: { title: string; sourceText: string; content: string }) {
+  const res = await fetch('/api/reviewers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to save reviewer');
+  return res.json();
+}
 
 export default function Home() {
+  const { user, isLoading: authLoading, isAuthenticated, login, logout } = useAuth();
+  const queryClient = useQueryClient();
+
+  const [appView, setAppView] = useState<AppView>("home");
   const [input, setInput] = useState("");
   const [inputMode, setInputMode] = useState<InputMode>("text");
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [isParsing, setIsParsing] = useState(false);
-  const [parseError, setParseError] = useState<string | null>(null);
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [showQuiz, setShowQuiz] = useState(false);
+  const [exportState, setExportState] = useState<'idle' | 'pdf' | 'docx'>('idle');
+  const [savingState, setSavingState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { generate, clear, output, isGenerating, error } = useStudyStream();
@@ -35,6 +65,70 @@ export default function Home() {
     }
   }, [output, isGenerating]);
 
+  const parseFile = useCallback(async (uf: UploadedFile): Promise<string> => {
+    const formData = new FormData();
+    formData.append("file", uf.file);
+    const res = await fetch("/api/study/parse-file", { method: "POST", body: formData });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error ?? "Failed to parse file.");
+    return data.text as string;
+  }, []);
+
+  const parseAndMergeFiles = useCallback(async (files: UploadedFile[]) => {
+    const updated = [...files];
+    const texts: string[] = [];
+
+    for (let i = 0; i < updated.length; i++) {
+      updated[i] = { ...updated[i], status: 'parsing' };
+      setUploadedFiles([...updated]);
+
+      try {
+        const text = await parseFile(updated[i]);
+        updated[i] = { ...updated[i], status: 'done', text };
+        texts.push(text);
+      } catch (e: unknown) {
+        updated[i] = { ...updated[i], status: 'error', error: e instanceof Error ? e.message : 'Parse failed' };
+      }
+      setUploadedFiles([...updated]);
+    }
+
+    const mergedText = texts.join('\n\n');
+    if (mergedText.trim()) {
+      setInput(mergedText);
+      generate(mergedText);
+    }
+  }, [parseFile, generate]);
+
+  const handleFilesSelected = useCallback((newFiles: FileList | File[]) => {
+    const fileArr = Array.from(newFiles);
+    const ufList: UploadedFile[] = fileArr.map(f => ({ file: f, status: 'pending' }));
+    setUploadedFiles(prev => {
+      const merged = [...prev, ...ufList];
+      parseAndMergeFiles(merged);
+      return merged;
+    });
+  }, [parseAndMergeFiles]);
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      handleFilesSelected(e.target.files);
+    }
+    e.target.value = "";
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files.length > 0) {
+      setInputMode("file");
+      handleFilesSelected(e.dataTransfer.files);
+    }
+  };
+
+  const removeFile = (index: number) => {
+    setUploadedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
   const handleGenerate = () => {
     if (!input.trim()) return;
     generate(input);
@@ -42,9 +136,9 @@ export default function Home() {
 
   const handleClear = () => {
     setInput("");
-    setSelectedFile(null);
-    setParseError(null);
+    setUploadedFiles([]);
     clear();
+    setSavingState('idle');
   };
 
   const handleCopy = () => {
@@ -54,84 +148,70 @@ export default function Home() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const parseAndGenerate = useCallback(async (file: File) => {
-    setParseError(null);
-    setIsParsing(true);
-    setInput("");
-    clear();
-
-    const formData = new FormData();
-    formData.append("file", file);
-
+  const handleExportPdf = async () => {
+    if (!output) return;
+    setExportState('pdf');
     try {
-      const res = await fetch("/api/study/parse-file", {
-        method: "POST",
-        body: formData,
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setParseError(data.error ?? "Failed to parse file.");
-        setIsParsing(false);
-        return;
-      }
-      setInput(data.text);
-      setIsParsing(false);
-      // Auto-generate reviewer after parsing
-      generate(data.text);
+      const title = uploadedFiles[0]?.file.name.replace(/\.[^.]+$/, '') ?? 'reviewer';
+      await exportToPdf(output, title);
+    } finally {
+      setExportState('idle');
+    }
+  };
+
+  const handleExportDocx = async () => {
+    if (!output) return;
+    setExportState('docx');
+    try {
+      const title = uploadedFiles[0]?.file.name.replace(/\.[^.]+$/, '') ?? 'reviewer';
+      await exportToDocx(output, title);
+    } finally {
+      setExportState('idle');
+    }
+  };
+
+  const handleSave = async () => {
+    if (!output || !isAuthenticated) return;
+    setSavingState('saving');
+    try {
+      const title = uploadedFiles[0]?.file.name.replace(/\.[^.]+$/, '') ??
+        (input.slice(0, 60).trim() || 'Untitled Reviewer');
+      await saveReviewer({ title, sourceText: input, content: output });
+      setSavingState('saved');
+      queryClient.invalidateQueries({ queryKey: ['reviewers'] });
+      setTimeout(() => setSavingState('idle'), 2500);
     } catch {
-      setParseError("Network error while parsing file. Please try again.");
-      setIsParsing(false);
-    }
-  }, [clear, generate]);
-
-  const handleFileSelect = (file: File) => {
-    setSelectedFile(file);
-    setParseError(null);
-    parseAndGenerate(file);
-  };
-
-  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) handleFileSelect(file);
-    // Reset so same file can be re-selected
-    e.target.value = "";
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
-      setInputMode("file");
-      handleFileSelect(file);
+      setSavingState('idle');
     }
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
+  const busy = isGenerating || uploadedFiles.some(f => f.status === 'parsing');
+  const hasOutput = !!output;
+  const isParsing = uploadedFiles.some(f => f.status === 'parsing');
 
-  const handleDragLeave = () => setIsDragging(false);
-
-  const removeFile = () => {
-    setSelectedFile(null);
-    setParseError(null);
-    setInput("");
-    clear();
-  };
-
-  const busy = isGenerating || isParsing;
+  if (appView === 'archives') {
+    return (
+      <Archives
+        onBack={() => setAppView('home')}
+        onLoad={(reviewer) => {
+          setInput(reviewer.sourceText);
+          clear();
+          generate(reviewer.sourceText);
+          setAppView('home');
+        }}
+      />
+    );
+  }
 
   return (
     <div
       className="min-h-screen flex flex-col bg-background relative selection:bg-primary/20 selection:text-primary-foreground"
       onDrop={handleDrop}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
+      onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+      onDragLeave={() => setIsDragging(false)}
     >
-      {/* Subtle academic grid background */}
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#8080800a_1px,transparent_1px),linear-gradient(to_bottom,#8080800a_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none" />
+
       {/* Global drag overlay */}
       <AnimatePresence>
         {isDragging && (
@@ -143,12 +223,21 @@ export default function Home() {
           >
             <div className="bg-card rounded-2xl p-10 shadow-2xl text-center border border-primary/20">
               <FileUp className="w-14 h-14 text-primary mx-auto mb-4" />
-              <p className="text-xl font-serif font-semibold text-foreground">Drop your file here</p>
+              <p className="text-xl font-serif font-semibold text-foreground">Drop your files here</p>
               <p className="text-sm text-muted-foreground mt-1">{ACCEPTED_LABELS} supported</p>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Quiz Modal */}
+      <AnimatePresence>
+        {showQuiz && output && (
+          <QuizModal content={output} onClose={() => setShowQuiz(false)} />
+        )}
+      </AnimatePresence>
+
+      {/* Header */}
       <header className="sticky top-0 z-50 w-full backdrop-blur-xl bg-background/80 border-b border-border/60">
         <div className="container mx-auto px-4 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2.5 text-primary">
@@ -157,11 +246,41 @@ export default function Home() {
             </div>
             <span className="text-xl font-serif font-bold tracking-tight text-foreground">Curtly</span>
           </div>
-          <div className="flex items-center text-sm font-medium text-muted-foreground">
-            Technical Study Assistant
+
+          <div className="flex items-center gap-2">
+            {!authLoading && isAuthenticated && (
+              <Button variant="ghost" size="sm" onClick={() => setAppView('archives')} className="gap-2 hidden sm:flex">
+                <Archive className="w-4 h-4" /> Archives
+              </Button>
+            )}
+
+            {authLoading ? (
+              <div className="w-20 h-8 bg-muted animate-pulse rounded-lg" />
+            ) : isAuthenticated ? (
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-muted/60 border border-border/50">
+                  {user?.profileImageUrl ? (
+                    <img src={user.profileImageUrl} alt="avatar" className="w-5 h-5 rounded-full object-cover" />
+                  ) : (
+                    <User className="w-4 h-4 text-muted-foreground" />
+                  )}
+                  <span className="text-xs font-medium text-foreground hidden sm:block">
+                    {user?.firstName ?? user?.email ?? 'User'}
+                  </span>
+                </div>
+                <Button variant="outline" size="sm" onClick={logout} className="gap-1.5">
+                  <LogOut className="w-3.5 h-3.5" /> Log out
+                </Button>
+              </div>
+            ) : (
+              <Button size="sm" onClick={login} className="gap-2">
+                <LogIn className="w-4 h-4" /> Log in
+              </Button>
+            )}
           </div>
         </div>
       </header>
+
       <main className="flex-1 container mx-auto px-4 lg:px-8 py-8 lg:py-10 max-w-[1400px] relative z-10">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 h-full min-h-[calc(100vh-10rem)]">
 
@@ -173,7 +292,7 @@ export default function Home() {
                   <FileText className="w-5 h-5 text-primary" />
                   Source Material
                 </h2>
-                <p className="text-sm text-muted-foreground mt-1">Paste text or upload a file</p>
+                <p className="text-sm text-muted-foreground mt-1">Paste text or upload files</p>
               </div>
 
               {/* Mode toggle */}
@@ -196,7 +315,7 @@ export default function Home() {
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
-                  <Upload className="w-3.5 h-3.5" /> File
+                  <Upload className="w-3.5 h-3.5" /> Files
                 </button>
               </div>
             </div>
@@ -230,99 +349,84 @@ export default function Home() {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -4 }}
                   transition={{ duration: 0.15 }}
-                  className="flex-1 flex flex-col min-h-[350px] lg:min-h-[500px]"
+                  className="flex-1 flex flex-col min-h-[350px] lg:min-h-[500px] gap-3"
                 >
                   <input
                     ref={fileInputRef}
                     type="file"
                     accept={ACCEPTED_TYPES}
+                    multiple
                     onChange={handleFileInputChange}
                     className="hidden"
                   />
 
                   {/* Upload zone */}
                   <div
-                    onClick={() => !selectedFile && fileInputRef.current?.click()}
-                    className={`flex-1 flex flex-col items-center justify-center rounded-2xl border-2 border-dashed transition-all cursor-pointer
-                      ${selectedFile
-                        ? "border-primary/30 bg-primary/[0.02] cursor-default"
-                        : "border-border/60 hover:border-primary/40 hover:bg-primary/[0.02] bg-muted/20"
-                      }`}
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-border/60 hover:border-primary/40 hover:bg-primary/[0.02] bg-muted/20 cursor-pointer transition-all p-6 text-center"
                   >
-                    {!selectedFile ? (
-                      <div className="text-center p-8">
-                        <div className="w-16 h-16 mx-auto mb-5 rounded-2xl bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/15 flex items-center justify-center">
-                          <FileUp className="w-8 h-8 text-primary/60" />
-                        </div>
-                        <p className="text-base font-medium text-foreground mb-1">
-                          Drop a file or click to browse
-                        </p>
-                        <p className="text-sm text-muted-foreground mb-4">
-                          {ACCEPTED_LABELS} up to 25 MB
-                        </p>
-                        <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}>
-                          <Upload className="w-4 h-4 mr-2" /> Choose File
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="w-full p-6 space-y-4">
-                        {/* File info card */}
-                        <div className="flex items-start gap-3 p-4 bg-background border border-border/60 rounded-xl shadow-sm">
-                          <div className="p-2 bg-primary/10 rounded-lg border border-primary/15 mt-0.5">
-                            <FileText className="w-5 h-5 text-primary" />
+                    <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/15 flex items-center justify-center">
+                      <FileUp className="w-6 h-6 text-primary/60" />
+                    </div>
+                    <p className="text-sm font-medium text-foreground mb-1">
+                      Drop files or click to browse
+                    </p>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      {ACCEPTED_LABELS} — multiple files allowed
+                    </p>
+                    <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}>
+                      <Plus className="w-3.5 h-3.5 mr-1.5" /> Add Files
+                    </Button>
+                  </div>
+
+                  {/* File list */}
+                  {uploadedFiles.length > 0 && (
+                    <div className="flex flex-col gap-2 flex-1 overflow-y-auto">
+                      {uploadedFiles.map((uf, i) => (
+                        <div key={i} className="flex items-start gap-3 p-3 bg-background border border-border/60 rounded-xl shadow-sm">
+                          <div className="p-2 bg-primary/10 rounded-lg border border-primary/15 mt-0.5 flex-shrink-0">
+                            <FileText className="w-4 h-4 text-primary" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="font-medium text-foreground text-sm truncate">{selectedFile.name}</p>
+                            <p className="font-medium text-foreground text-sm truncate">{uf.file.name}</p>
                             <p className="text-xs text-muted-foreground mt-0.5">
-                              {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                              {(uf.file.size / 1024 / 1024).toFixed(2)} MB
                             </p>
+                            {uf.status === 'parsing' && (
+                              <div className="flex items-center gap-1.5 mt-1 text-xs text-muted-foreground">
+                                <Loader2 className="w-3 h-3 animate-spin text-primary" />
+                                <span>Extracting text...</span>
+                              </div>
+                            )}
+                            {uf.status === 'done' && (
+                              <div className="flex items-center gap-1.5 mt-1 text-xs text-green-600">
+                                <CheckCheck className="w-3 h-3" />
+                                <span>Extracted — {uf.text?.length.toLocaleString()} chars</span>
+                              </div>
+                            )}
+                            {uf.status === 'error' && (
+                              <div className="flex items-center gap-1.5 mt-1 text-xs text-destructive">
+                                <AlertCircle className="w-3 h-3" />
+                                <span>{uf.error}</span>
+                              </div>
+                            )}
                           </div>
                           <button
-                            onClick={(e) => { e.stopPropagation(); removeFile(); }}
-                            className="text-muted-foreground hover:text-destructive transition-colors p-1 rounded-md hover:bg-destructive/10"
+                            onClick={() => removeFile(i)}
+                            className="text-muted-foreground hover:text-destructive transition-colors p-1 rounded-md hover:bg-destructive/10 flex-shrink-0"
                           >
                             <X className="w-4 h-4" />
                           </button>
                         </div>
-
-                        {/* Parse status */}
-                        {isParsing && (
-                          <div className="flex items-center gap-2.5 text-sm text-muted-foreground px-1">
-                            <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                            <span>Extracting text from file...</span>
-                          </div>
-                        )}
-                        {parseError && (
-                          <div className="flex items-start gap-2.5 text-sm text-destructive bg-destructive/5 border border-destructive/20 rounded-xl px-4 py-3">
-                            <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                            <span>{parseError}</span>
-                          </div>
-                        )}
-                        {!isParsing && !parseError && input && (
-                          <div className="flex items-center gap-2 text-sm text-green-600 px-1">
-                            <CheckCheck className="w-4 h-4" />
-                            <span>Text extracted — {input.length.toLocaleString()} characters</span>
-                          </div>
-                        )}
-
-                        {/* Change file */}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="w-full"
-                          onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
-                        >
-                          <Upload className="w-4 h-4 mr-2" /> Choose Different File
-                        </Button>
-                      </div>
-                    )}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                 </motion.div>
               )}
             </AnimatePresence>
 
             {/* Action buttons */}
-            <div className="flex items-center gap-4 mt-2">
+            <div className="flex items-center gap-3 mt-2">
               <Button
                 onClick={handleGenerate}
                 disabled={busy || !input.trim()}
@@ -332,7 +436,7 @@ export default function Home() {
                 {busy ? (
                   <>
                     <Loader2 className="w-5 h-5 animate-spin mr-2" />
-                    {isParsing ? "Parsing File..." : "Extracting Insights..."}
+                    {isParsing ? "Parsing Files..." : "Extracting Insights..."}
                   </>
                 ) : (
                   <>
@@ -345,18 +449,25 @@ export default function Home() {
                 variant="outline"
                 size="lg"
                 onClick={handleClear}
-                disabled={busy || (!input && !output && !selectedFile)}
+                disabled={busy || (!input && !output && uploadedFiles.length === 0)}
                 className="px-6 group"
                 title="Clear all"
               >
                 <Trash2 className="w-5 h-5 text-muted-foreground group-hover:text-destructive transition-colors" />
               </Button>
             </div>
+
+            {/* Mobile archives link */}
+            {isAuthenticated && (
+              <Button variant="ghost" size="sm" onClick={() => setAppView('archives')} className="gap-2 sm:hidden w-full">
+                <Archive className="w-4 h-4" /> View Archives
+              </Button>
+            )}
           </section>
 
           {/* RIGHT COLUMN - OUTPUT */}
           <section className="flex flex-col gap-4">
-            <div className="flex items-end justify-between h-[52px]">
+            <div className="flex items-end justify-between" style={{ minHeight: '52px' }}>
               <div>
                 <h2 className="text-lg font-serif font-semibold flex items-center gap-2 text-foreground">
                   <BookOpenText className="w-5 h-5 text-primary" />
@@ -366,16 +477,17 @@ export default function Home() {
               </div>
 
               <AnimatePresence>
-                {output && (
-                  <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
+                {hasOutput && (
+                  <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-1.5">
                     <Button
                       variant="secondary"
                       size="sm"
                       onClick={handleCopy}
                       className="text-foreground shadow-sm h-9"
+                      disabled={isGenerating}
                     >
                       {copied ? <CheckCheck className="w-4 h-4 text-green-600 mr-1.5" /> : <Copy className="w-4 h-4 mr-1.5 text-primary" />}
-                      {copied ? "Copied!" : "Copy Text"}
+                      {copied ? "Copied!" : "Copy"}
                     </Button>
                   </motion.div>
                 )}
@@ -394,13 +506,12 @@ export default function Home() {
                     <RefreshCw className="w-4 h-4 mr-2" /> Try Again
                   </Button>
                 </div>
-              ) : output ? (
+              ) : hasOutput ? (
                 <div
                   ref={scrollRef}
                   className="flex-1 overflow-y-auto p-6 md:p-8 scroll-smooth"
                 >
                   <FormattedOutput text={output} />
-
                   {isGenerating && (
                     <div className="flex items-center gap-1.5 mt-6 text-primary p-2">
                       <span className="w-2 h-2 bg-primary/60 rounded-full animate-pulse" />
@@ -416,7 +527,7 @@ export default function Home() {
                   </div>
                   <h3 className="text-xl font-serif font-semibold text-foreground mb-3">Ready to Learn</h3>
                   <p className="max-w-md text-[15px] leading-relaxed">
-                    Paste text or upload a PDF, DOCX, or PPTX on the left and click generate. I'll distill the content into a clean, scannable exam reviewer.
+                    Paste text or upload PDF, DOCX, or PPTX files and click generate. I'll distill the content into a clean, scannable exam reviewer.
                   </p>
                   <div className="flex items-center gap-3 mt-5 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1.5 bg-muted/60 border border-border/50 px-3 py-1.5 rounded-full">
@@ -432,6 +543,93 @@ export default function Home() {
                 </div>
               )}
             </div>
+
+            {/* Output action buttons */}
+            <AnimatePresence>
+              {hasOutput && !isGenerating && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 8 }}
+                  className="flex flex-wrap gap-2"
+                >
+                  {/* Quiz */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowQuiz(true)}
+                    className="gap-2"
+                  >
+                    <HelpCircle className="w-4 h-4 text-primary" />
+                    Take Quiz
+                  </Button>
+
+                  {/* Export PDF */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleExportPdf}
+                    disabled={exportState !== 'idle'}
+                    className="gap-2"
+                  >
+                    {exportState === 'pdf' ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <FileDown className="w-4 h-4 text-primary" />
+                    )}
+                    Export PDF
+                  </Button>
+
+                  {/* Export DOCX */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleExportDocx}
+                    disabled={exportState !== 'idle'}
+                    className="gap-2"
+                  >
+                    {exportState === 'docx' ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <FileDown className="w-4 h-4 text-primary" />
+                    )}
+                    Export DOCX
+                  </Button>
+
+                  {/* Save to archive */}
+                  {isAuthenticated && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleSave}
+                      disabled={savingState !== 'idle'}
+                      className="gap-2"
+                    >
+                      {savingState === 'saving' ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : savingState === 'saved' ? (
+                        <CheckCheck className="w-4 h-4 text-green-600" />
+                      ) : (
+                        <Save className="w-4 h-4 text-primary" />
+                      )}
+                      {savingState === 'saved' ? 'Saved!' : 'Save to Archive'}
+                    </Button>
+                  )}
+
+                  {!isAuthenticated && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={login}
+                      className="gap-2 text-muted-foreground"
+                    >
+                      <LogIn className="w-4 h-4" />
+                      Log in to save
+                    </Button>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </section>
 
         </div>
