@@ -132,7 +132,6 @@ export default function Home() {
     >
       {/* Subtle academic grid background */}
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#8080800a_1px,transparent_1px),linear-gradient(to_bottom,#8080800a_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none" />
-
       {/* Global drag overlay */}
       <AnimatePresence>
         {isDragging && (
@@ -150,21 +149,19 @@ export default function Home() {
           </motion.div>
         )}
       </AnimatePresence>
-
       <header className="sticky top-0 z-50 w-full backdrop-blur-xl bg-background/80 border-b border-border/60">
         <div className="container mx-auto px-4 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2.5 text-primary">
             <div className="bg-primary/10 p-1.5 rounded-lg border border-primary/20">
               <BookOpenText className="w-5 h-5" />
             </div>
-            <span className="text-xl font-serif font-bold tracking-tight text-foreground">ScholarAI</span>
+            <span className="text-xl font-serif font-bold tracking-tight text-foreground">kurt AI</span>
           </div>
           <div className="flex items-center text-sm font-medium text-muted-foreground">
             Technical Study Assistant
           </div>
         </div>
       </header>
-
       <main className="flex-1 container mx-auto px-4 lg:px-8 py-8 lg:py-10 max-w-[1400px] relative z-10">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 h-full min-h-[calc(100vh-10rem)]">
 
