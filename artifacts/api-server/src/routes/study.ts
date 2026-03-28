@@ -5,12 +5,14 @@ import multer from "multer";
 import os from "os";
 import fs from "fs/promises";
 import path from "path";
-// @ts-ignore — officeparser is externalized from bundle; resolved at runtime
-import { parseOffice } from "officeparser";
+// @ts-ignore — pdf-parse v1 is CJS with no type declarations
+import pdfParse from "pdf-parse";
+import mammoth from "mammoth";
+import JSZip from "jszip";
 
 const router: IRouter = Router();
 
-// Use disk storage with preserved extension so officeparser can detect file type
+// Preserve original file extension so parsers can detect file type
 const upload = multer({
   storage: multer.diskStorage({
     destination: os.tmpdir(),
@@ -19,18 +21,40 @@ const upload = multer({
       cb(null, `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
     },
   }),
-  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB limit
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25 MB
 });
 
-const ALLOWED_TYPES = new Set([
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/msword",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  "application/vnd.ms-powerpoint",
-]);
-
 const ALLOWED_EXTENSIONS = new Set([".pdf", ".docx", ".doc", ".pptx", ".ppt"]);
+
+/** Extract plain text from a PPTX file buffer by reading slide XML */
+async function extractPptxText(buffer: Buffer): Promise<string> {
+  const zip = await JSZip.loadAsync(buffer);
+  const slideFiles = Object.keys(zip.files)
+    .filter((name) => name.match(/^ppt\/slides\/slide\d+\.xml$/))
+    .sort();
+
+  const texts: string[] = [];
+  for (const slideFile of slideFiles) {
+    const xml = await zip.files[slideFile].async("text");
+    // Extract all text between <a:t> tags
+    const matches = xml.match(/<a:t[^>]*>([^<]+)<\/a:t>/g) ?? [];
+    const slideText = matches.map((m) => m.replace(/<[^>]+>/g, "")).join(" ");
+    if (slideText.trim()) texts.push(slideText.trim());
+  }
+  return texts.join("\n\n");
+}
+
+/** Extract plain text from a DOCX file buffer */
+async function extractDocxText(buffer: Buffer): Promise<string> {
+  const result = await mammoth.extractRawText({ buffer });
+  return result.value;
+}
+
+/** Extract plain text from a PDF file buffer */
+async function extractPdfText(buffer: Buffer): Promise<string> {
+  const result = await pdfParse(buffer);
+  return result.text;
+}
 
 const SYSTEM_PROMPT = `You are a Technical Study Assistant specializing in Precise Information Extraction. Your goal is to convert complex document content into a structured, high-utility exam reviewer.
 
@@ -66,19 +90,27 @@ router.post("/study/parse-file", upload.single("file"), async (req, res) => {
   const ext = path.extname(req.file.originalname).toLowerCase();
   const filePath = req.file.path;
 
-  if (!ALLOWED_EXTENSIONS.has(ext) && !ALLOWED_TYPES.has(req.file.mimetype)) {
+  if (!ALLOWED_EXTENSIONS.has(ext)) {
     await fs.unlink(filePath).catch(() => {});
     res.status(400).json({ error: "Unsupported file type. Please upload a PDF, DOCX, or PPTX file." });
     return;
   }
 
+  let text = "";
   try {
-    const text: string = await parseOffice(filePath, { outputErrorToConsole: false });
-
+    const buffer = await fs.readFile(filePath);
     await fs.unlink(filePath).catch(() => {});
 
+    if (ext === ".pdf") {
+      text = await extractPdfText(buffer);
+    } else if (ext === ".docx" || ext === ".doc") {
+      text = await extractDocxText(buffer);
+    } else if (ext === ".pptx" || ext === ".ppt") {
+      text = await extractPptxText(buffer);
+    }
+
     if (!text || text.trim().length < 20) {
-      res.status(422).json({ error: "Could not extract readable text from this file. The file may be image-only or corrupted." });
+      res.status(422).json({ error: "Could not extract readable text from this file. It may be image-only, scanned, or corrupted." });
       return;
     }
 
