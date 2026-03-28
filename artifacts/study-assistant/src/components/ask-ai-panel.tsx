@@ -153,7 +153,6 @@ export function AskAIPanel({ onClose, reviewerContent }: AskAIPanelProps) {
     <div className="fixed inset-0 z-[200] flex items-stretch justify-end">
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-
       {/* Panel */}
       <motion.div
         initial={{ x: '100%' }}
@@ -169,7 +168,7 @@ export function AskAIPanel({ onClose, reviewerContent }: AskAIPanelProps) {
               <Bot className="w-5 h-5 text-primary" />
             </div>
             <div>
-              <h2 className="font-serif font-bold text-lg text-foreground">Ask AI</h2>
+              <h2 className="font-serif font-bold text-lg text-foreground">Ask Curtly</h2>
               <p className="text-xs text-muted-foreground flex items-center gap-1">
                 <Globe className="w-3 h-3" /> Answers from reviewer + web sources
               </p>
