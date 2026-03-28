@@ -5,11 +5,20 @@ import multer from "multer";
 import os from "os";
 import fs from "fs/promises";
 import path from "path";
+// @ts-ignore — officeparser is externalized from bundle; resolved at runtime
+import { parseOffice } from "officeparser";
 
 const router: IRouter = Router();
 
+// Use disk storage with preserved extension so officeparser can detect file type
 const upload = multer({
-  dest: os.tmpdir(),
+  storage: multer.diskStorage({
+    destination: os.tmpdir(),
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      cb(null, `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
+    },
+  }),
   limits: { fileSize: 25 * 1024 * 1024 }, // 25MB limit
 });
 
@@ -64,11 +73,7 @@ router.post("/study/parse-file", upload.single("file"), async (req, res) => {
   }
 
   try {
-    // Dynamically import officeparser (ESM-compatible)
-    const officeParser = await import("officeparser");
-    const parseOfficeAsync = officeParser.parseOfficeAsync ?? officeParser.default?.parseOfficeAsync;
-
-    const text: string = await parseOfficeAsync(filePath);
+    const text: string = await parseOffice(filePath, { outputErrorToConsole: false });
 
     await fs.unlink(filePath).catch(() => {});
 
