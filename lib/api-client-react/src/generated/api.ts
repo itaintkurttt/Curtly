@@ -5,18 +5,25 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
+  MutationFunction,
   QueryFunction,
   QueryKey,
+  UseMutationOptions,
+  UseMutationResult,
   UseQueryOptions,
   UseQueryResult,
 } from "@tanstack/react-query";
 
-import type { HealthStatus } from "./api.schemas";
+import type {
+  ErrorResponse,
+  ExtractStudyContentBody,
+  HealthStatus,
+} from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
-import type { ErrorType } from "../custom-fetch";
+import type { ErrorType, BodyType } from "../custom-fetch";
 
 type AwaitedInput<T> = PromiseLike<T> | T;
 
@@ -99,3 +106,90 @@ export function useHealthCheck<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Processes raw text and returns a structured keyword/definition exam reviewer
+ * @summary Extract study keywords and definitions
+ */
+export const getExtractStudyContentUrl = () => {
+  return `/api/study/extract`;
+};
+
+export const extractStudyContent = async (
+  extractStudyContentBody: ExtractStudyContentBody,
+  options?: RequestInit,
+): Promise<string> => {
+  return customFetch<string>(getExtractStudyContentUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(extractStudyContentBody),
+  });
+};
+
+export const getExtractStudyContentMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof extractStudyContent>>,
+    TError,
+    { data: BodyType<ExtractStudyContentBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof extractStudyContent>>,
+  TError,
+  { data: BodyType<ExtractStudyContentBody> },
+  TContext
+> => {
+  const mutationKey = ["extractStudyContent"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof extractStudyContent>>,
+    { data: BodyType<ExtractStudyContentBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return extractStudyContent(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ExtractStudyContentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof extractStudyContent>>
+>;
+export type ExtractStudyContentMutationBody = BodyType<ExtractStudyContentBody>;
+export type ExtractStudyContentMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Extract study keywords and definitions
+ */
+export const useExtractStudyContent = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof extractStudyContent>>,
+    TError,
+    { data: BodyType<ExtractStudyContentBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof extractStudyContent>>,
+  TError,
+  { data: BodyType<ExtractStudyContentBody> },
+  TContext
+> => {
+  return useMutation(getExtractStudyContentMutationOptions(options));
+};

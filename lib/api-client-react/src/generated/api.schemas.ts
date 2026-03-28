@@ -8,3 +8,12 @@
 export interface HealthStatus {
   status: string;
 }
+
+export interface ExtractStudyContentBody {
+  /** The raw PDF or document text to process */
+  text: string;
+}
+
+export interface ErrorResponse {
+  error: string;
+}

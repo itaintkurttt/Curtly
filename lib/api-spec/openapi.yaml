@@ -1,6 +1,5 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
   description: API specification
@@ -10,6 +9,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: study
+    description: Study assistant operations
 paths:
   /healthz:
     get:
@@ -24,6 +25,31 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /study/extract:
+    post:
+      operationId: extractStudyContent
+      tags: [study]
+      summary: Extract study keywords and definitions
+      description: Processes raw text and returns a structured keyword/definition exam reviewer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExtractStudyContentBody"
+      responses:
+        "200":
+          description: Streaming SSE response with structured study content
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +59,18 @@ components:
           type: string
       required:
         - status
-
+    ExtractStudyContentBody:
+      type: object
+      properties:
+        text:
+          type: string
+          description: The raw PDF or document text to process
+      required:
+        - text
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error

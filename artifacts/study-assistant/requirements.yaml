@@ -1,0 +1,11 @@
+packages:
+  "framer-motion": "For layout animations and smooth UI transitions"
+  "clsx": "Utility for constructing className strings conditionally"
+  "tailwind-merge": "Utility to merge tailwind classes safely"
+  "lucide-react": "Beautiful consistent icons"
+
+images: []
+
+notes:
+  - "Implemented a custom SSE parsing hook (use-study-stream.ts) to handle the real-time AI response"
+  - "Built a bespoke markdown-like formatting component (formatted-output.tsx) to ensure keywords are perfectly styled as academic badges"

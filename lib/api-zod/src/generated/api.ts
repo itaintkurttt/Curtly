@@ -14,3 +14,11 @@ import * as zod from "zod";
 export const HealthCheckResponse = zod.object({
   status: zod.string(),
 });
+
+/**
+ * Processes raw text and returns a structured keyword/definition exam reviewer
+ * @summary Extract study keywords and definitions
+ */
+export const ExtractStudyContentBody = zod.object({
+  text: zod.string().describe("The raw PDF or document text to process"),
+});
