@@ -31,35 +31,35 @@
 }
 
 :root {
-  /* Clean Academic Light Theme */
-  --background: 210 33% 99%;
-  --foreground: 222 47% 11%;
-  
-  --card: 0 0% 100%;
-  --card-foreground: 222 47% 11%;
-  
-  --popover: 0 0% 100%;
-  --popover-foreground: 222 47% 11%;
-  
-  --primary: 226 58% 39%; /* Oxford Indigo */
-  --primary-foreground: 210 40% 98%;
-  
-  --secondary: 210 40% 96%;
-  --secondary-foreground: 222 47% 11%;
-  
-  --muted: 210 40% 96%;
-  --muted-foreground: 215 16% 47%;
-  
-  --accent: 210 40% 96%;
-  --accent-foreground: 222 47% 11%;
-  
-  --destructive: 0 84% 60%;
+  /* Dark Academic Theme */
+  --background: 224 30% 8%;
+  --foreground: 210 40% 93%;
+
+  --card: 224 24% 12%;
+  --card-foreground: 210 40% 93%;
+
+  --popover: 224 24% 11%;
+  --popover-foreground: 210 40% 93%;
+
+  --primary: 229 65% 68%;
+  --primary-foreground: 224 30% 8%;
+
+  --secondary: 224 20% 18%;
+  --secondary-foreground: 210 40% 93%;
+
+  --muted: 224 20% 16%;
+  --muted-foreground: 215 16% 52%;
+
+  --accent: 224 20% 18%;
+  --accent-foreground: 210 40% 93%;
+
+  --destructive: 0 72% 55%;
   --destructive-foreground: 210 40% 98%;
-  
-  --border: 214 32% 91%;
-  --input: 214 32% 91%;
-  --ring: 226 58% 39%;
-  
+
+  --border: 224 20% 18%;
+  --input: 224 20% 18%;
+  --ring: 229 65% 68%;
+
   --radius: 1rem;
 }
 
