@@ -251,7 +251,6 @@ export default function Home() {
     >
       {/* Subtle grid */}
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff08_1px,transparent_1px),linear-gradient(to_bottom,#ffffff08_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none" />
-
       {/* Drag overlay */}
       <AnimatePresence>
         {isDragging && (
@@ -265,7 +264,6 @@ export default function Home() {
           </motion.div>
         )}
       </AnimatePresence>
-
       {/* Modals */}
       <AnimatePresence>
         {showQuiz && output && (
@@ -277,7 +275,6 @@ export default function Home() {
           <AskAIPanel onClose={() => setShowAskAI(false)} reviewerContent={output + (webContent ? '\n\n' + webContent : '')} />
         )}
       </AnimatePresence>
-
       {/* Header */}
       <header className="sticky top-0 z-50 w-full backdrop-blur-xl bg-background/80 border-b border-border/60">
         <div className="container mx-auto px-4 lg:px-8 h-16 flex items-center justify-between">
@@ -317,7 +314,6 @@ export default function Home() {
           </div>
         </div>
       </header>
-
       {/* Step Progress */}
       <div className="w-full bg-card/50 border-b border-border/50 py-6">
         <div className="max-w-2xl mx-auto px-4">
@@ -355,13 +351,11 @@ export default function Home() {
           </div>
         </div>
       </div>
-
       {/* Hidden file input */}
       <input ref={fileInputRef} type="file" accept={ACCEPTED_TYPES} multiple onChange={(e) => {
         if (e.target.files?.length) handleFilesSelected(e.target.files);
         e.target.value = "";
       }} className="hidden" />
-
       <main className="flex-1 relative z-10 pb-20">
         <AnimatePresence mode="wait">
 
@@ -655,11 +649,10 @@ export default function Home() {
 
         </AnimatePresence>
       </main>
-
       <footer className="relative z-10 border-t border-border/40">
         <div className="container mx-auto px-4 lg:px-8 h-12 flex items-center justify-between text-xs text-muted-foreground">
           <span className="font-serif font-medium text-foreground/40">Curtly</span>
-          <span>AI-powered study assistant · Powered by Gemini</span>
+          <span>Developed by VKM · Powered by Gemini</span>
         </div>
       </footer>
     </div>
