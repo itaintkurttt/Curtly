@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { ExtractStudyContentBody } from "@workspace/api-zod";
 import { openai } from "@workspace/integrations-openai-ai-server";
+import { ai } from "@workspace/integrations-gemini-ai";
 import multer from "multer";
 import os from "os";
 import fs from "fs/promises";
@@ -24,7 +25,8 @@ const upload = multer({
   limits: { fileSize: 25 * 1024 * 1024 }, // 25 MB
 });
 
-const ALLOWED_EXTENSIONS = new Set([".pdf", ".docx", ".doc", ".pptx", ".ppt"]);
+const ALLOWED_EXTENSIONS = new Set([".pdf", ".docx", ".doc", ".pptx", ".ppt", ".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"]);
+const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"]);
 
 /** Extract plain text from a PPTX file buffer by reading slide XML */
 async function extractPptxText(buffer: Buffer): Promise<string> {
@@ -54,6 +56,32 @@ async function extractDocxText(buffer: Buffer): Promise<string> {
 async function extractPdfText(buffer: Buffer): Promise<string> {
   const result = await pdfParse(buffer);
   return result.text;
+}
+
+/** Extract text from an image using Gemini Vision API */
+async function extractImageText(buffer: Buffer): Promise<string> {
+  const base64 = buffer.toString("base64");
+  const response = await ai.models.generateContent({
+    model: "gemini-3-flash-preview",
+    contents: [
+      {
+        role: "user",
+        parts: [
+          {
+            text: "Extract all visible text and information from this image. Return only the extracted text content, nothing else.",
+          },
+          {
+            inlineData: {
+              mimeType: "image/jpeg",
+              data: base64,
+            },
+          },
+        ],
+      },
+    ],
+  });
+  const text = (response as unknown as { text?: () => string }).text?.() ?? "";
+  return text;
 }
 
 const SYSTEM_PROMPT = `You are a Technical Study Assistant that converts document content into a structured exam reviewer.
@@ -96,7 +124,7 @@ router.post("/study/parse-file", upload.single("file"), async (req, res) => {
 
   if (!ALLOWED_EXTENSIONS.has(ext)) {
     await fs.unlink(filePath).catch(() => {});
-    res.status(400).json({ error: "Unsupported file type. Please upload a PDF, DOCX, or PPTX file." });
+    res.status(400).json({ error: "Unsupported file type. Please upload a PDF, DOCX, PPTX, or image file (JPG, PNG, WebP)." });
     return;
   }
 
@@ -111,10 +139,12 @@ router.post("/study/parse-file", upload.single("file"), async (req, res) => {
       text = await extractDocxText(buffer);
     } else if (ext === ".pptx" || ext === ".ppt") {
       text = await extractPptxText(buffer);
+    } else if (IMAGE_EXTENSIONS.has(ext)) {
+      text = await extractImageText(buffer);
     }
 
     if (!text || text.trim().length < 20) {
-      res.status(422).json({ error: "Could not extract readable text from this file. It may be image-only, scanned, or corrupted." });
+      res.status(422).json({ error: "Could not extract readable text from this file. Please ensure it contains legible text or data." });
       return;
     }
 

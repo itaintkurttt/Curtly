@@ -18,8 +18,8 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import Archives from './Archives';
 
-const ACCEPTED_TYPES = ".pdf,.docx,.doc,.pptx,.ppt";
-const ACCEPTED_LABELS = "PDF, DOCX, PPTX";
+const ACCEPTED_TYPES = ".pdf,.docx,.doc,.pptx,.ppt,.jpg,.jpeg,.png,.webp,.gif,.bmp";
+const ACCEPTED_LABELS = "PDF, DOCX, PPTX, JPG, PNG, WebP";
 
 const STEPS = [
   { id: 1, title: 'Add Source' },
