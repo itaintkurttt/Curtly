@@ -61,9 +61,17 @@ function pickString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function normalizeUserId(claims: Record<string, unknown>): string {
+  const sub = pickString(claims.sub);
+  if (sub) return sub;
+  const email = pickString(claims.email);
+  if (email) return email;
+  return crypto.randomBytes(16).toString("hex");
+}
+
 async function upsertUser(claims: Record<string, unknown>) {
   const userData = {
-    id: pickString(claims.sub) ?? pickString(claims.email) ?? crypto.randomUUID(),
+    id: normalizeUserId(claims),
     email: pickString(claims.email),
     firstName: pickString(claims.first_name) ?? pickString(claims.given_name),
     lastName: pickString(claims.last_name) ?? pickString(claims.family_name),
@@ -76,7 +84,10 @@ async function upsertUser(claims: Record<string, unknown>) {
     .onConflictDoUpdate({
       target: usersTable.id,
       set: {
-        ...userData,
+        email: userData.email,
+        firstName: userData.firstName,
+        lastName: userData.lastName,
+        profileImageUrl: userData.profileImageUrl,
         updatedAt: new Date(),
       },
     })
