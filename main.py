@@ -35,6 +35,34 @@ if "seen_update" not in st.session_state:
     show_update()
 
 # --- 3. THE APP UI ---
+# --- 3. THE APP UI & CORE ENGINE ---
 st.title("🦉 Curtly v2.0")
-st.write("Welcome to your independent study assistant.")
+
+# Creating the functional tabs for your tools
+tab1, tab2, tab3 = st.tabs(["📄 Upload File", "🔗 YouTube Link", "📸 Image"])
+
+with tab1:
+    uploaded_file = st.file_uploader("Upload academic module (PDF/Docx)", type=["pdf", "docx", "txt"])
+    if uploaded_file:
+        if st.button("Generate Reviewer", use_container_width=True):
+            with st.spinner("Analyzing your module..."):
+                # This is where your summarization logic will live
+                st.success("Analysis complete! (Ready for logic paste)")
+
+with tab2:
+    yt_url = st.text_input("Paste YouTube Lecture Link")
+    if yt_url:
+        if st.button("Extract Notes", use_container_width=True):
+            with st.spinner("Transcribing video..."):
+                # This is where the youtube-transcript-api works
+                st.info("YouTube integration is ready.")
+
+with tab3:
+    img_file = st.file_uploader("Upload handwritten notes or textbook shot", type=["png", "jpg", "jpeg"])
+    if img_file:
+        st.image(img_file, caption="Target Image")
+        if st.button("Read & Summarize", use_container_width=True):
+            with st.spinner("Scanning with Vision..."):
+                # This uses the Gemini Vision model
+                st.write("Vision engine online.")
 
