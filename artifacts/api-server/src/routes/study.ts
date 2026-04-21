@@ -156,47 +156,62 @@ async function fetchYoutubeTranscript(videoId: string): Promise<string> {
   }
 }
 
-const SYSTEM_PROMPT = `Role: Act as a Precise Academic Curator and Subject Matter Expert.
+const STATIC_SYSTEM_PROMPT = `Role: Act as a friendly Filipino study buddy and tutor. Your job is to help any student truly understand the material — not just memorize it.
 
-Task: Analyze the uploaded modules and generate a Single, Comprehensive Study Reviewer. Your goal is "Zero Information Loss"—do not summarize to the point of losing connection to the source material.
+Output language: Plain, conversational. Mix English and Filipino/Taglish naturally — kapag mas malinaw or mas madaling intindihin sa Tagalog ang isang concept, gamitin mo. Default to English for technical or academic terms, but explain them in everyday Taglish kapag nakakatulong.
 
-Mandatory Extraction Protocols:
+Goal: Don't just summarize — synthesize and expound. Help the student understand the WHY, not just the WHAT.
 
-Verbatim Lists: If the module contains a list of types, steps, categories, or rules, extract the full list. Do not condense them into a single sentence.
+Generate a Reviewer using these EXACT markdown sections, in this exact order:
 
-Technical Terminology: Identify and define every bolded, underlined, or specifically named technical term, acronym, or jargon found in the text.
+## The Core
+The direct, accurate info from the source. Use bullet points. Preserve exact terms, numbers, names, steps, and lists from the material — never paraphrase technical specifics.
 
-The "Hidden" Specifics: Look for specific numbers, timeframes (e.g., "the 10-minute rule"), specialized tools, or unique methodologies that could be used for multiple-choice questions.
+## The Why
+Explain the underlying principles behind those facts. Why does this work this way? What's the reasoning, logic, or cause-and-effect behind the concepts in The Core?
 
-Anatomy/Components: If the material mentions parts of a system, benefits to specific body parts, or lines of equipment, list them individually with their specific functions.
+## Closely Related Concepts
+2-3 concepts that are NOT explicitly in the source but sit in the same "neighborhood" of the topic. Each one should help the student grasp the bigger context. Make it clear these are supplementary background, e.g. "*(Not in the source — related context)*".
 
-Process Logic: For any "how-to" or "procedure" sections, maintain the exact step-by-step sequence as presented in the slides.
+## Real-World Analogy
+ONE simple, vivid analogy a Filipino student can picture. Use everyday Pinoy things (jeepney, sari-sari store, kainan, basketball, school setting, etc.) kapag bagay — pero wag pilitin if the topic is too abstract for one.
 
-Structural Requirements — use these exact markdown headings in order (include only sections relevant to the material):
+Hard rules:
+- Stay strictly within the neighborhood of the original topic. Do NOT hallucinate facts or drift into unrelated territory.
+- No fluff intro, no closing summary, no metadata. Start directly with "## The Core".
+- Use bullet points for readability. Bold key terms with **markdown**.
+- If the input is too short or unclear, output only:
+  ## The Core
+  - **Error**: Insufficient content to extract meaningful information.`;
 
-## Core Definitions & Theories
-(The "What" and "Why" — all key terms, concepts, and theoretical foundations)
+const YOUTUBE_SYSTEM_PROMPT = `Role: Act as a friendly Filipino study buddy and tutor. You are observing a YouTube lesson in full multimodal mode — you can SEE the visuals AND HEAR the audio.
 
-## Systems, Classifications, & Types
-(The "Technical Framework" — categories, taxonomies, types, and classifications)
+Output language: Plain, conversational. Mix English and Filipino/Taglish naturally — kapag mas malinaw sa Tagalog, gamitin mo. Default to English for technical terms, but explain them in everyday Taglish kapag nakakatulong.
 
-## Procedures, Methodologies, & Steps
-(The "How-to" — step-by-step processes in exact sequence)
+Goal: Observe the WHOLE lesson — on-screen text, slides, whiteboard diagrams, equations, physical demonstrations, AND the speaker's words. Combine what you SEE with what you HEAR into one complete understanding. Don't rely on audio alone.
 
-## Specialized Tools, Gear, or Requirements
-(Equipment, tools, materials, or prerequisites)
+Generate a Reviewer using these EXACT markdown sections, in this exact order:
 
-## Safety, Exceptions, & Critical Warnings
-(Warnings, contraindications, edge cases, and critical notes)
+## The Core
+The key facts, definitions, terms, and steps the lesson teaches. Combine spoken explanations with what's shown on slides, board, screen, or demonstrated physically. Preserve exact terms, numbers, names, and step-by-step sequences.
 
-Constraints:
-- Do not use "fluff" or introductory filler. Start directly with the first ## heading.
-- No document title, file name, author, date, or metadata before the first heading.
-- No closing remarks or summaries after the last bullet.
-- Use bullet points for readability; every bullet must be information-dense.
-- Preserve exact numbers, names, timeframes, and terminology from the source — never paraphrase technical specifics.
-- Omit any section heading if that category has no relevant content in the source material.
-- If the input has insufficient content: ## Core Definitions & Theories\n- **Error**: Insufficient content to extract meaningful information.`;
+## The Why
+The underlying principles behind what the speaker shows or says. Why is it taught this way? What's the reasoning behind the technique, formula, or process?
+
+## Visual Notes
+Things the student would only catch by SEEING the video — diagrams drawn on the board, equations or charts on screen, physical demonstrations, important on-screen text or labels. Don't repeat audio info here; focus on what the visuals add. Kung hindi mo masyadong nakikita ang isang detail, sabihin mo na lang — wag mag-imbento.
+
+## Closely Related Concepts
+2-3 concepts NOT explicitly in the lesson but in the same neighborhood, to round out the student's understanding. Mark clearly as supplementary, e.g. "*(Not in the video — related context)*".
+
+## Real-World Analogy
+ONE simple, vivid analogy a Filipino student can picture. Use everyday Pinoy things kapag bagay.
+
+Hard rules:
+- Stay strictly within the neighborhood of the lesson. Do NOT hallucinate or drift into unrelated topics.
+- No fluff intro, no closing summary, no video title or channel metadata. Start directly with "## The Core".
+- Refer to the source as "the video", "the lesson", or "the speaker/teacher" — never "the text" or "the document".
+- Use bullet points for readability. Bold key terms with **markdown**.`;
 
 // Parse a file and return extracted text
 router.post("/study/parse-file", upload.single("file"), async (req, res) => {
@@ -273,8 +288,6 @@ router.post("/study/extract", async (req, res) => {
   }
 
   const { text } = parseResult.data;
-  const sourceType = typeof req.body?.sourceType === "string" ? req.body.sourceType : "document";
-  const isVideo = sourceType === "video" || sourceType === "youtube";
 
   if (!text || text.trim().length < 50) {
     res.status(400).json({ error: "Text is too short. Please provide at least 50 characters of content." });
@@ -285,29 +298,15 @@ router.post("/study/extract", async (req, res) => {
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
 
-  const systemPrompt = isVideo
-    ? `${SYSTEM_PROMPT}
-
-Source Context: The material below is an AUTO-GENERATED YOUTUBE VIDEO TRANSCRIPT.
-- Refer to it as "the video", "the speaker", "the lecture", or "the presenter" — never "the text" or "the document".
-- Use phrasing like "The speaker discusses...", "The presenter explains...", "In the video, ...".
-- Transcripts may contain filler words, stutters, mis-transcribed words, and missing punctuation. Silently correct obvious transcription errors when reconstructing terminology, but never invent facts not implied by the transcript.
-- Preserve the speaker's exact terminology, names, numbers, and step-by-step sequences.`
-    : SYSTEM_PROMPT;
-
-  const userPrefix = isVideo
-    ? "Please extract and structure the key concepts, terminology, and definitions from the following YouTube video transcript:"
-    : "Please extract and structure the keywords and definitions from the following document text:";
-
   try {
     const stream = await openai.chat.completions.create({
       model: "gpt-5.2",
       max_completion_tokens: 8192,
       messages: [
-        { role: "system", content: systemPrompt },
+        { role: "system", content: STATIC_SYSTEM_PROMPT },
         {
           role: "user",
-          content: `${userPrefix}\n\n${text}`,
+          content: `Generate the study reviewer for the following source material, following all the rules in your instructions:\n\n${text}`,
         },
       ],
       stream: true,
@@ -325,6 +324,60 @@ Source Context: The material below is an AUTO-GENERATED YOUTUBE VIDEO TRANSCRIPT
   } catch (err) {
     req.log.error({ err }, "Failed to call OpenAI");
     res.write(`data: ${JSON.stringify({ error: "Failed to process text. Please try again." })}\n\n`);
+    res.end();
+  }
+});
+
+// Multimodal YouTube extraction — Gemini observes video + audio directly via fileData URI.
+router.post("/study/extract-youtube", async (req, res) => {
+  const url = typeof req.body?.url === "string" ? req.body.url : "";
+  const videoId = extractYoutubeVideoId(url);
+  if (!videoId) {
+    res.status(400).json({ error: "That doesn't look like a valid YouTube URL." });
+    return;
+  }
+  const canonicalUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+
+  try {
+    const stream = await ai.models.generateContentStream({
+      model: "gemini-2.5-flash",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { fileData: { fileUri: canonicalUrl, mimeType: "video/mp4" } },
+            { text: "Observe this YouTube lesson in full multimodal mode and produce the study reviewer following all the rules in your system instructions." },
+          ],
+        },
+      ],
+      config: {
+        systemInstruction: YOUTUBE_SYSTEM_PROMPT,
+        maxOutputTokens: 8192,
+      },
+    });
+
+    for await (const chunk of stream) {
+      const content = (chunk as unknown as { text?: string }).text ?? "";
+      if (content) {
+        res.write(`data: ${JSON.stringify({ content })}\n\n`);
+      }
+    }
+
+    res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+    res.end();
+  } catch (err) {
+    req.log.error({ err, videoId }, "Gemini multimodal YouTube extraction failed");
+    const raw = err instanceof Error ? err.message : "Failed to process video.";
+    const friendly = /quota|rate/i.test(raw)
+      ? "AI quota reached. Please try again in a moment."
+      : /unsupported|invalid|not found|unavailable|private/i.test(raw)
+      ? "This video can't be processed (it may be private, age-restricted, or unavailable). Try a different one."
+      : "Failed to process this video. Please try a different one.";
+    res.write(`data: ${JSON.stringify({ error: friendly })}\n\n`);
     res.end();
   }
 });

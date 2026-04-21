@@ -53,7 +53,8 @@ Every package extends `tsconfig.base.json` which sets `composite: true`. The roo
 ### Study Assistant (Curtly)
 - **Auth**: Replit Auth (OIDC/PKCE) — login/logout in header. Inline `useAuth` hook at `src/hooks/use-auth.ts`.
 - **Multiple file upload**: Users can upload multiple PDF/DOCX/PPTX files at once; each is parsed and text concatenated before generating a reviewer. Image files (JPG/PNG/WebP/GIF/BMP) are OCR'd via Gemini vision.
-- **YouTube videos**: Users can paste a YouTube URL; transcript is fetched server-side via `youtube-transcript` and processed exactly like a document. The reviewer prompt switches to video-aware phrasing ("the speaker discusses…").
+- **YouTube videos (multimodal)**: Users paste a YouTube URL; Gemini 2.5 Flash observes the video natively (visuals + on-screen text + spoken audio) via `fileData.fileUri` and streams a reviewer that includes a "Visual Notes" section. No transcript fetch needed.
+- **Reviewer structure**: All reviewers (file or video) follow a 4-section Filipino study-buddy format — `## The Core` (verbatim facts), `## The Why` (underlying principles), `## Closely Related Concepts` (2–3 supplementary concepts in the same neighborhood), `## Real-World Analogy` (one Pinoy-flavored analogy). YouTube reviewers add `## Visual Notes`. Tone mixes English with natural Taglish.
 - **Reviewer generation**: AI-powered (OpenAI gpt-5.2) keyword/definition reviewer via SSE streaming.
 - **Quiz mode**: AI generates multiple-choice questions from reviewer content; interactive answer selection with score and explanations.
 - **Export**: Export reviewer as PDF (jsPDF) or DOCX (docx library).

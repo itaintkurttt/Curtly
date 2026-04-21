@@ -151,8 +151,12 @@ export default function Home() {
   };
 
   const handleGenerate = () => {
-    if (!input.trim()) return;
     setWebContent(''); setWebSources([]);
+    if (inputMode === 'youtube' && youtubeUrl.trim() && youtubeVideoId) {
+      generate('', 'video', { youtubeUrl: youtubeUrl.trim() });
+      return;
+    }
+    if (!input.trim()) return;
     generate(input, sourceType);
   };
 
@@ -163,27 +167,25 @@ export default function Home() {
     clear(); setSavingState('idle'); setStep(1);
   };
 
-  const handleFetchYoutube = useCallback(async () => {
+  // Client-side YouTube URL validator. We don't fetch a transcript anymore — Gemini
+  // observes the video directly (multimodal) when the user clicks Generate.
+  const handleFetchYoutube = useCallback(() => {
     const url = youtubeUrl.trim();
     if (!url) return;
-    setYoutubeStatus('fetching');
     setYoutubeError(null);
-    try {
-      const res = await fetch('/api/study/youtube-transcript', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? 'Failed to fetch transcript.');
-      setInput(data.text);
-      setSourceType('video');
-      setYoutubeVideoId(data.videoId ?? null);
-      setYoutubeStatus('done');
-    } catch (e: unknown) {
+    const idMatch = url.match(
+      /(?:youtube\.com\/(?:[^/]+\/.+\/|(?:v|e(?:mbed)?)\/|shorts\/|live\/|.*[?&]v=)|youtu\.be\/)([A-Za-z0-9_-]{11})/
+    );
+    const id = idMatch ? idMatch[1] : (/^[A-Za-z0-9_-]{11}$/.test(url) ? url : null);
+    if (!id) {
       setYoutubeStatus('error');
-      setYoutubeError(e instanceof Error ? e.message : 'Failed to fetch transcript.');
+      setYoutubeError("That doesn't look like a valid YouTube URL.");
+      return;
     }
+    setYoutubeVideoId(id);
+    setSourceType('video');
+    setInput(`[YouTube video: ${id}]`); // placeholder so unrelated input checks pass
+    setYoutubeStatus('done');
   }, [youtubeUrl]);
 
   const handleCopy = () => {
@@ -461,7 +463,7 @@ export default function Home() {
                         </div>
                         <div>
                           <p className="font-semibold text-foreground text-sm">YouTube Video</p>
-                          <p className="text-xs text-muted-foreground">We'll fetch the transcript and treat it like any other source.</p>
+                          <p className="text-xs text-muted-foreground">Gemini will watch &amp; listen — observing visuals, on-screen text, and audio together.</p>
                         </div>
                       </div>
                       <div className="flex gap-2">
@@ -475,14 +477,10 @@ export default function Home() {
                         />
                         <Button
                           onClick={handleFetchYoutube}
-                          disabled={!youtubeUrl.trim() || youtubeStatus === 'fetching'}
+                          disabled={!youtubeUrl.trim()}
                           className="gap-1.5"
                         >
-                          {youtubeStatus === 'fetching' ? (
-                            <><Loader2 className="w-4 h-4 animate-spin" /> Fetching</>
-                          ) : (
-                            <><Plus className="w-4 h-4" /> Load</>
-                          )}
+                          <Plus className="w-4 h-4" /> Load
                         </Button>
                       </div>
 
@@ -493,10 +491,10 @@ export default function Home() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-foreground truncate">
-                              Transcript loaded{youtubeVideoId ? ` · ${youtubeVideoId}` : ''}
+                              Video ready{youtubeVideoId ? ` · ${youtubeVideoId}` : ''}
                             </p>
                             <p className="text-xs text-green-400 flex items-center gap-1">
-                              <CheckCheck className="w-3 h-3" /> {input.split(/\s+/).filter(Boolean).length.toLocaleString()} words ready
+                              <CheckCheck className="w-3 h-3" /> Gemini will watch &amp; listen on Generate
                             </p>
                           </div>
                           <button
@@ -554,7 +552,26 @@ export default function Home() {
               </div>
 
               <div className="bg-card border border-border/60 rounded-2xl shadow-xl p-8">
-                {uploadedFiles.filter(f => f.status === 'done').length > 0 ? (
+                {inputMode === 'youtube' && youtubeVideoId ? (
+                  <div className="flex flex-col items-center text-center">
+                    <div className="w-20 h-20 bg-red-500/10 border border-red-500/20 rounded-full flex items-center justify-center mb-5">
+                      <Youtube className="w-10 h-10 text-red-400" />
+                    </div>
+                    <h3 className="text-xl font-semibold text-foreground mb-1">YouTube Video Ready</h3>
+                    <p className="text-muted-foreground mb-6 text-sm">
+                      Video ID: <span className="font-mono">{youtubeVideoId}</span>
+                    </p>
+                    <div className="bg-primary/[0.06] border border-primary/15 rounded-xl p-4 w-full text-left flex items-start gap-4 mb-6">
+                      <div className="bg-primary/15 p-2 rounded-lg text-primary mt-0.5 flex-shrink-0">
+                        <Sparkles className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-foreground text-sm">Multimodal Observation</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">Gemini will watch the visuals (slides, board, on-screen text) and listen to the audio together — combining sight + sound into one reviewer. This may take a moment for longer videos.</p>
+                      </div>
+                    </div>
+                  </div>
+                ) : uploadedFiles.filter(f => f.status === 'done').length > 0 ? (
                   <div className="flex flex-col items-center text-center">
                     <div className="w-20 h-20 bg-green-500/10 border border-green-500/20 rounded-full flex items-center justify-center mb-5">
                       <FileBadge className="w-10 h-10 text-green-400" />

@@ -5,16 +5,21 @@ export function useStudyStream() {
   const [output, setOutput] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const generate = useCallback(async (text: string, sourceType: 'document' | 'video' = 'document') => {
+  const generate = useCallback(async (
+    text: string,
+    sourceType: 'document' | 'video' = 'document',
+    opts?: { youtubeUrl?: string },
+  ) => {
     setIsGenerating(true);
     setOutput("");
     setError(null);
 
     try {
-      const response = await fetch('/api/study/extract', {
+      const isYoutube = !!opts?.youtubeUrl;
+      const response = await fetch(isYoutube ? '/api/study/extract-youtube' : '/api/study/extract', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, sourceType })
+        body: JSON.stringify(isYoutube ? { url: opts!.youtubeUrl } : { text, sourceType }),
       });
 
       if (!response.ok) {
@@ -50,17 +55,17 @@ export function useStudyStream() {
                   continue;
                 }
 
+                let data: { done?: boolean; error?: string; content?: string } | null = null;
                 try {
-                  const data = JSON.parse(dataStr);
-                  if (data.done) {
-                    done = true;
-                  }
-                  if (data.content) {
-                    accumulated += data.content;
-                    setOutput(accumulated);
-                  }
-                } catch (e) {
-                  // Silently ignore partial JSON chunks; they are rare with \n\n split but possible
+                  data = JSON.parse(dataStr);
+                } catch {
+                  // Silently ignore partial JSON chunks
+                }
+                if (data?.error) throw new Error(data.error);
+                if (data?.done) done = true;
+                if (data?.content) {
+                  accumulated += data.content;
+                  setOutput(accumulated);
                 }
               }
             }
