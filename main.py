@@ -2,88 +2,97 @@ import streamlit as st
 import google.generativeai as genai
 from youtube_transcript_api import YouTubeTranscriptApi
 from PIL import Image
+from PyPDF2 import PdfReader
+from docx import Document
+import io
 
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="Curtly v2.0", page_icon="🦉")
 
-# Securely connecting to your Gemini API Key
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     model = genai.GenerativeModel('gemini-1.5-flash')
 else:
-    st.error("API Key missing! Please check your Streamlit Secrets.")
+    st.error("API Key missing! Check Streamlit Secrets.")
 
-# --- 2. THE "WHAT'S NEW" MODAL ---
+# --- 2. GREETING MODAL ---
 @st.dialog("What's New in Curtly v2", width="large")
 def show_update():
     try:
         st.image("logo.png", use_container_width=True)
     except:
-        st.subheader("🦉 Curtly v2.0 is officially live!")
-    
+        st.subheader("🦉 Curtly v2.0 is live!")
     st.markdown("""
     ### **Build: 04222026 Update**
-    * **🚀 Enhanced Generation Engine** – Faster, more stable performance.
-    * **🧠 Smart Summarization** – Now **expands** on topics instead of just extracting.
-    * **🖼️ Image Recognition** – Analysis for your handwritten notes and screenshots.
-    * **📺 YouTube Integration (BETA)** – Turn lecture links into full reviewers.
+    * **🚀 Pro-Level Extraction** – Now reads PDFs and Word Docs properly.
+    * **🧠 Smart Summarization** – Structured reviewers for school modules.
+    * **🖼️ Vision Engine** – Scan textbook pages and handwritten notes.
     """)
     if st.button("Start Studying", use_container_width=True):
         st.session_state.seen_update = True
         st.rerun()
 
-# Trigger the Greeting only once per session
 if "seen_update" not in st.session_state:
     show_update()
 
-# --- 3. MAIN UI ---
+# --- 3. HELPER FUNCTIONS ---
+def get_pdf_text(file):
+    reader = PdfReader(file)
+    return " ".join([page.extract_text() for page in reader.pages])
+
+def get_docx_text(file):
+    doc = Document(file)
+    return " ".join([para.text for para in doc.paragraphs])
+
+# --- 4. MAIN UI ---
 st.title("🦉 Curtly v2.0")
 
-tab1, tab2, tab3 = st.tabs(["📄 Upload File", "🔗 YouTube Link", "📸 Image"])
+tab1, tab2, tab3 = st.tabs(["📄 Upload Module", "🔗 YouTube Link", "📸 Image"])
 
 with tab1:
-    st.subheader("Module Summarizer")
-    uploaded_file = st.file_uploader("Upload academic module (PDF/Docx/TXT)", type=["pdf", "docx", "txt"])
+    st.subheader("Module Reviewer Generator")
+    uploaded_file = st.file_uploader("Upload PDF, Docx, or TXT", type=["pdf", "docx", "txt"])
+    
     if uploaded_file and st.button("Generate Reviewer", key="file_btn"):
-        with st.spinner("Analyzing your module..."):
+        with st.spinner("Extracting content and generating reviewer..."):
             try:
-                # Basic text extraction for immediate testing
-                content = uploaded_file.read().decode("utf-8", errors="ignore")
-                prompt = f"Act as a professional study assistant. Summarize this academic material into a structured reviewer with key terms and explanations: {content}"
+                # Determine file type and extract text
+                if uploaded_file.name.endswith('.pdf'):
+                    text = get_pdf_text(uploaded_file)
+                elif uploaded_file.name.endswith('.docx'):
+                    text = get_docx_text(uploaded_file)
+                else:
+                    text = uploaded_file.read().decode("utf-8", errors="ignore")
+                
+                # Send to Gemini
+                prompt = f"Act as an expert academic summarizer. Create a detailed reviewer from this module. Use bullet points, bold key terms, and ensure no jargon is used so it is easy to understand: {text}"
                 response = model.generate_content(prompt)
                 st.markdown("---")
                 st.markdown(response.text)
             except Exception as e:
-                st.error(f"Error processing file: {e}")
+                st.error(f"Error reading file: {e}")
 
 with tab2:
-    st.subheader("YouTube Lecture to Notes")
-    yt_link = st.text_input("Paste YouTube Lecture URL")
+    st.subheader("Lecture Video Analyzer")
+    yt_link = st.text_input("Paste YouTube Link")
     if yt_link and st.button("Extract Notes", key="yt_btn"):
-        with st.spinner("Transcribing video..."):
+        with st.spinner("Getting transcript..."):
             try:
-                # Extract Video ID from URL
                 video_id = yt_link.split("v=")[1].split("&")[0]
                 transcript = YouTubeTranscriptApi.get_transcript(video_id)
-                text = " ".join([t['text'] for t in transcript])
-                
-                prompt = f"Turn this video transcript into a comprehensive study guide with bullet points: {text}"
-                response = model.generate_content(prompt)
+                full_text = " ".join([t['text'] for t in transcript])
+                response = model.generate_content(f"Turn this lecture transcript into organized study notes: {full_text}")
                 st.markdown("---")
                 st.markdown(response.text)
-            except Exception:
-                st.error("Could not retrieve transcript. Please ensure the video has English captions enabled.")
+            except:
+                st.error("Transcript unavailable. Try a video with manual captions!")
 
 with tab3:
-    st.subheader("Visual Note Scanner")
-    img_file = st.file_uploader("Upload a photo of your notes or textbook", type=["png", "jpg", "jpeg"])
-    if img_file and st.button("Read & Summarize", key="img_btn"):
-        with st.spinner("Scanning with Vision..."):
-            try:
-                img = Image.open(img_file)
-                prompt = "Read the text in this image and provide a clear, organized summary of the information."
-                response = model.generate_content([prompt, img])
-                st.markdown("---")
-                st.markdown(response.text)
-            except Exception as e:
-                st.error(f"Vision Error: {e}")
+    st.subheader("Vision Note Scanner")
+    img_file = st.file_uploader("Upload photo", type=["png", "jpg", "jpeg"])
+    if img_file and st.button("Analyze Image", key="img_btn"):
+        with st.spinner("Reading image..."):
+            img = Image.open(img_file)
+            response = model.generate_content(["Summarize the content of this study material:", img])
+            st.markdown("---")
+            st.markdown(response.text)
