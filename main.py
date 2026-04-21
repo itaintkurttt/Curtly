@@ -1,24 +1,26 @@
 import streamlit as st
 import google.generativeai as genai
+from youtube_transcript_api import YouTubeTranscriptApi
+from PIL import Image
 
-# --- 1. CONFIGURATION & SECRETS ---
-st.set_page_config(page_title="Curtly v2", page_icon="🦉")
+# --- 1. CONFIGURATION ---
+st.set_page_config(page_title="Curtly v2.0", page_icon="🦉")
 
+# Securely connecting to your Gemini API Key
 if "GEMINI_API_KEY" in st.secrets:
-    api_key = st.secrets["GEMINI_API_KEY"]
-    genai.configure(api_key=api_key)
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    model = genai.GenerativeModel('gemini-1.5-flash')
 else:
-    st.error("API Key not found! Please add GEMINI_API_KEY to Streamlit Secrets.")
+    st.error("API Key missing! Please check your Streamlit Secrets.")
 
 # --- 2. THE "WHAT'S NEW" MODAL ---
 @st.dialog("What's New in Curtly v2", width="large")
 def show_update():
-    # This tries to show your logo if it's in the repo
     try:
         st.image("logo.png", use_container_width=True)
     except:
-        st.write("✨ **Curtly v2.0 is here!**")
-        
+        st.subheader("🦉 Curtly v2.0 is officially live!")
+    
     st.markdown("""
     ### **Build: 04222026 Update**
     * **🚀 Enhanced Generation Engine** – Faster, more stable performance.
@@ -30,62 +32,7 @@ def show_update():
         st.session_state.seen_update = True
         st.rerun()
 
-# Trigger the Greeting only once
-if "seen_update" not in st.session_state:
-    show_update()
-
-# --- 3. THE APP UI ---
-# --- 3. THE APP UI & CORE ENGINE ---
-st.title("🦉 Curtly v2.0")
-
-# Creating the functional tabs for your tools
-tab1, tab2, tab3 = st.tabs(["📄 Upload File", "🔗 YouTube Link", "📸 Image"])
-
-with tab1:
-    uploaded_file = st.file_uploader("Upload academic module (PDF/Docx)", type=["pdf", "docx", "txt"])
-    if uploaded_file:
-        if st.button("Generate Reviewer", use_container_width=True):
-            with st.spinner("Analyzing your module..."):
-                # This is where your summarization logic will live
-                st.success("Analysis complete! (Ready for logic paste)")
-
-with tab2:
-    yt_url = st.text_input("Paste YouTube Lecture Link")
-    if yt_url:
-        if st.button("Extract Notes", use_container_width=True):
-            with st.spinner("Transcribing video..."):
-                # This is where the youtube-transcript-api works
-                st.info("YouTube integration is ready.")
-
-with tab3:
-    img_file = st.file_uploader("Upload handwritten notes or textbook shot", type=["png", "jpg", "jpeg"])
-    if img_file:
-        st.image(img_file, caption="Target Image")
-        if st.button("Read & Summarize", use_container_width=True):
-            with st.spinner("Scanning with Vision..."):
-                # This uses the Gemini Vision model
-                st.write("Vision engine online.")
-import streamlit as st
-import google.generativeai as genai
-from youtube_transcript_api import YouTubeTranscriptApi
-
-# --- 1. CONFIGURATION ---
-st.set_page_config(page_title="Curtly v2", page_icon="🦉")
-
-if "GEMINI_API_KEY" in st.secrets:
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    model = genai.GenerativeModel('gemini-1.5-flash')
-else:
-    st.error("API Key missing!")
-
-# --- 2. GREETING MODAL ---
-@st.dialog("What's New in Curtly v2")
-def show_update():
-    st.markdown("### **Build: 04222026**\n* 🚀 Faster Engine\n* 📺 YouTube Support\n* 📸 Image Reviewer")
-    if st.button("Start Studying"):
-        st.session_state.seen_update = True
-        st.rerun()
-
+# Trigger the Greeting only once per session
 if "seen_update" not in st.session_state:
     show_update()
 
@@ -95,32 +42,48 @@ st.title("🦉 Curtly v2.0")
 tab1, tab2, tab3 = st.tabs(["📄 Upload File", "🔗 YouTube Link", "📸 Image"])
 
 with tab1:
-    uploaded_file = st.file_uploader("Upload academic module", type=["pdf", "docx", "txt"])
-    if uploaded_file and st.button("Generate Reviewer"):
-        with st.spinner("Analyzing..."):
-            # Simple prompt for immediate testing
-            content = uploaded_file.read().decode("utf-8", errors="ignore")
-            response = model.generate_content(f"Summarize this academic material into a reviewer: {content}")
-            st.markdown(response.text)
+    st.subheader("Module Summarizer")
+    uploaded_file = st.file_uploader("Upload academic module (PDF/Docx/TXT)", type=["pdf", "docx", "txt"])
+    if uploaded_file and st.button("Generate Reviewer", key="file_btn"):
+        with st.spinner("Analyzing your module..."):
+            try:
+                # Basic text extraction for immediate testing
+                content = uploaded_file.read().decode("utf-8", errors="ignore")
+                prompt = f"Act as a professional study assistant. Summarize this academic material into a structured reviewer with key terms and explanations: {content}"
+                response = model.generate_content(prompt)
+                st.markdown("---")
+                st.markdown(response.text)
+            except Exception as e:
+                st.error(f"Error processing file: {e}")
 
 with tab2:
-    yt_link = st.text_input("Paste YouTube Link")
-    if yt_link and st.button("Extract Notes"):
-        with st.spinner("Transcribing..."):
+    st.subheader("YouTube Lecture to Notes")
+    yt_link = st.text_input("Paste YouTube Lecture URL")
+    if yt_link and st.button("Extract Notes", key="yt_btn"):
+        with st.spinner("Transcribing video..."):
             try:
+                # Extract Video ID from URL
                 video_id = yt_link.split("v=")[1].split("&")[0]
                 transcript = YouTubeTranscriptApi.get_transcript(video_id)
                 text = " ".join([t['text'] for t in transcript])
-                response = model.generate_content(f"Turn this video transcript into study notes: {text}")
+                
+                prompt = f"Turn this video transcript into a comprehensive study guide with bullet points: {text}"
+                response = model.generate_content(prompt)
+                st.markdown("---")
                 st.markdown(response.text)
-            except Exception as e:
-                st.error("Could not get transcript. Make sure the video has captions!")
+            except Exception:
+                st.error("Could not retrieve transcript. Please ensure the video has English captions enabled.")
 
 with tab3:
-    img_file = st.file_uploader("Upload notes photo", type=["png", "jpg", "jpeg"])
-    if img_file and st.button("Read & Summarize"):
-        with st.spinner("Vision engine scanning..."):
-            from PIL import Image
-            img = Image.open(img_file)
-            response = model.generate_content(["Summarize the text in this image:", img])
-            st.markdown(response.text)
+    st.subheader("Visual Note Scanner")
+    img_file = st.file_uploader("Upload a photo of your notes or textbook", type=["png", "jpg", "jpeg"])
+    if img_file and st.button("Read & Summarize", key="img_btn"):
+        with st.spinner("Scanning with Vision..."):
+            try:
+                img = Image.open(img_file)
+                prompt = "Read the text in this image and provide a clear, organized summary of the information."
+                response = model.generate_content([prompt, img])
+                st.markdown("---")
+                st.markdown(response.text)
+            except Exception as e:
+                st.error(f"Vision Error: {e}")
