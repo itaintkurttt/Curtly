@@ -463,7 +463,7 @@ export default function Home() {
                         </div>
                         <div>
                           <p className="font-semibold text-foreground text-sm">YouTube Video</p>
-                          <p className="text-xs text-muted-foreground">Gemini will watch &amp; listen — observing visuals, on-screen text, and audio together.</p>
+                          <p className="text-xs text-muted-foreground">Curtly will watch & listen — observing visuals, on-screen text, and audio together.</p>
                         </div>
                       </div>
                       <div className="flex gap-2">
