@@ -57,15 +57,17 @@ function getSafeReturnTo(value: unknown): string {
   return value;
 }
 
+function pickString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
 async function upsertUser(claims: Record<string, unknown>) {
   const userData = {
-    id: claims.sub as string,
-    email: (claims.email as string) || null,
-    firstName: (claims.first_name as string) || null,
-    lastName: (claims.last_name as string) || null,
-    profileImageUrl: (claims.profile_image_url || claims.picture) as
-      | string
-      | null,
+    id: pickString(claims.sub) ?? pickString(claims.email) ?? crypto.randomUUID(),
+    email: pickString(claims.email),
+    firstName: pickString(claims.first_name) ?? pickString(claims.given_name),
+    lastName: pickString(claims.last_name) ?? pickString(claims.family_name),
+    profileImageUrl: pickString(claims.profile_image_url) ?? pickString(claims.picture),
   };
 
   const [user] = await db
