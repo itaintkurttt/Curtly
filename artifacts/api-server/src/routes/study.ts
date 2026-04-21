@@ -58,29 +58,40 @@ async function extractPdfText(buffer: Buffer): Promise<string> {
   return result.text;
 }
 
+const IMAGE_MIME_TYPES: Record<string, string> = {
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
+  ".bmp": "image/bmp",
+};
+
 /** Extract text from an image using Gemini Vision API */
-async function extractImageText(buffer: Buffer): Promise<string> {
+async function extractImageText(buffer: Buffer, ext: string): Promise<string> {
   const base64 = buffer.toString("base64");
+  const mimeType = IMAGE_MIME_TYPES[ext] ?? "image/jpeg";
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: "gemini-2.5-flash",
     contents: [
       {
         role: "user",
         parts: [
           {
-            text: "Extract all visible text and information from this image. Return only the extracted text content, nothing else.",
-          },
-          {
             inlineData: {
-              mimeType: "image/jpeg",
+              mimeType,
               data: base64,
             },
+          },
+          {
+            text: "You are an OCR and visual analysis assistant. Extract ALL visible text, headings, bullet points, captions, labels, diagrams, tables, and notes from this image. Preserve structure (headings, lists) using plain text and markdown. If the image contains handwritten notes, infographics, screenshots, slides, or photographs of pages, transcribe everything legible. Also briefly describe any non-text visual information (diagrams, charts) that conveys educational content. Return only the extracted/transcribed content, no preamble.",
           },
         ],
       },
     ],
+    config: { maxOutputTokens: 8192 },
   });
-  const text = (response as unknown as { text?: () => string }).text?.() ?? "";
+  const text = (response as unknown as { text?: string }).text ?? "";
   return text;
 }
 
@@ -154,7 +165,7 @@ router.post("/study/parse-file", upload.single("file"), async (req, res) => {
     } else if (ext === ".pptx" || ext === ".ppt") {
       text = await extractPptxText(buffer);
     } else if (IMAGE_EXTENSIONS.has(ext)) {
-      text = await extractImageText(buffer);
+      text = await extractImageText(buffer, ext);
     }
 
     if (!text || text.trim().length < 20) {
