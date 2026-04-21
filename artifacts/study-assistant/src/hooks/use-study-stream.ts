@@ -5,7 +5,7 @@ export function useStudyStream() {
   const [output, setOutput] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const generate = useCallback(async (text: string) => {
+  const generate = useCallback(async (text: string, sourceType: 'document' | 'video' = 'document') => {
     setIsGenerating(true);
     setOutput("");
     setError(null);
@@ -14,7 +14,7 @@ export function useStudyStream() {
       const response = await fetch('/api/study/extract', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text })
+        body: JSON.stringify({ text, sourceType })
       });
 
       if (!response.ok) {

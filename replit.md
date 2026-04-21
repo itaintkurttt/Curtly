@@ -52,7 +52,8 @@ Every package extends `tsconfig.base.json` which sets `composite: true`. The roo
 
 ### Study Assistant (Curtly)
 - **Auth**: Replit Auth (OIDC/PKCE) — login/logout in header. Inline `useAuth` hook at `src/hooks/use-auth.ts`.
-- **Multiple file upload**: Users can upload multiple PDF/DOCX/PPTX files at once; each is parsed and text concatenated before generating a reviewer.
+- **Multiple file upload**: Users can upload multiple PDF/DOCX/PPTX files at once; each is parsed and text concatenated before generating a reviewer. Image files (JPG/PNG/WebP/GIF/BMP) are OCR'd via Gemini vision.
+- **YouTube videos**: Users can paste a YouTube URL; transcript is fetched server-side via `youtube-transcript` and processed exactly like a document. The reviewer prompt switches to video-aware phrasing ("the speaker discusses…").
 - **Reviewer generation**: AI-powered (OpenAI gpt-5.2) keyword/definition reviewer via SSE streaming.
 - **Quiz mode**: AI generates multiple-choice questions from reviewer content; interactive answer selection with score and explanations.
 - **Export**: Export reviewer as PDF (jsPDF) or DOCX (docx library).

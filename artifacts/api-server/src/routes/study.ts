@@ -6,6 +6,8 @@ import multer from "multer";
 import os from "os";
 import fs from "fs/promises";
 import path from "path";
+// The package's CJS entry trips Node's ESM loader; load the ESM build directly.
+import { YoutubeTranscript } from "youtube-transcript/dist/youtube-transcript.esm.js";
 // @ts-ignore — pdf-parse v1 is CJS with no type declarations
 import pdfParse from "pdf-parse";
 import mammoth from "mammoth";
@@ -95,6 +97,65 @@ async function extractImageText(buffer: Buffer, ext: string): Promise<string> {
   return text;
 }
 
+/** Extract a YouTube video ID from common URL formats. Returns null if not parseable. */
+function extractYoutubeVideoId(input: string): string | null {
+  const trimmed = input.trim();
+  // Bare 11-char ID
+  if (/^[A-Za-z0-9_-]{11}$/.test(trimmed)) return trimmed;
+  try {
+    const u = new URL(trimmed);
+    const host = u.hostname.replace(/^www\./, "");
+    if (host === "youtu.be") {
+      const id = u.pathname.split("/").filter(Boolean)[0];
+      return id && /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null;
+    }
+    if (host === "youtube.com" || host === "m.youtube.com" || host === "music.youtube.com") {
+      const v = u.searchParams.get("v");
+      if (v && /^[A-Za-z0-9_-]{11}$/.test(v)) return v;
+      // /embed/<id>, /shorts/<id>, /live/<id>
+      const parts = u.pathname.split("/").filter(Boolean);
+      if (parts.length >= 2 && ["embed", "shorts", "live", "v"].includes(parts[0])) {
+        const id = parts[1];
+        if (/^[A-Za-z0-9_-]{11}$/.test(id)) return id;
+      }
+    }
+  } catch {
+    // not a URL
+  }
+  return null;
+}
+
+/** Fetch a YouTube transcript (any available caption track). Throws with a friendly message on failure. */
+async function fetchYoutubeTranscript(videoId: string): Promise<string> {
+  try {
+    const segments = await YoutubeTranscript.fetchTranscript(videoId);
+    if (!segments || segments.length === 0) {
+      throw new Error("This video has no captions available. Try a different video that has subtitles enabled.");
+    }
+    const text = segments
+      .map((s) => (s.text ?? "").replace(/\s+/g, " ").trim())
+      .filter(Boolean)
+      .join(" ");
+    if (!text || text.trim().length < 20) {
+      throw new Error("The transcript appears empty. Try a different video.");
+    }
+    // Decode common HTML entities the transcript scraper leaves behind
+    return text
+      .replace(/&amp;#39;/g, "'")
+      .replace(/&#39;/g, "'")
+      .replace(/&quot;/g, '"')
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/transcript/i.test(msg) && /disabled|not available|could not/i.test(msg)) {
+      throw new Error("Captions are disabled or unavailable for this video. Try one with subtitles.");
+    }
+    throw err instanceof Error ? err : new Error(String(err));
+  }
+}
+
 const SYSTEM_PROMPT = `Role: Act as a Precise Academic Curator and Subject Matter Expert.
 
 Task: Analyze the uploaded modules and generate a Single, Comprehensive Study Reviewer. Your goal is "Zero Information Loss"—do not summarize to the point of losing connection to the source material.
@@ -181,6 +242,28 @@ router.post("/study/parse-file", upload.single("file"), async (req, res) => {
   }
 });
 
+// Fetch a YouTube transcript and return it as plain text
+router.post("/study/youtube-transcript", async (req, res) => {
+  const url = typeof req.body?.url === "string" ? req.body.url : "";
+  if (!url.trim()) {
+    res.status(400).json({ error: "Please provide a YouTube URL." });
+    return;
+  }
+  const videoId = extractYoutubeVideoId(url);
+  if (!videoId) {
+    res.status(400).json({ error: "That doesn't look like a valid YouTube URL." });
+    return;
+  }
+  try {
+    const text = await fetchYoutubeTranscript(videoId);
+    res.json({ text, videoId });
+  } catch (err) {
+    req.log.warn({ err, videoId }, "Failed to fetch YouTube transcript");
+    const msg = err instanceof Error ? err.message : "Failed to fetch transcript.";
+    res.status(422).json({ error: msg });
+  }
+});
+
 // Extract study content from raw text (SSE streaming)
 router.post("/study/extract", async (req, res) => {
   const parseResult = ExtractStudyContentBody.safeParse(req.body);
@@ -190,6 +273,8 @@ router.post("/study/extract", async (req, res) => {
   }
 
   const { text } = parseResult.data;
+  const sourceType = typeof req.body?.sourceType === "string" ? req.body.sourceType : "document";
+  const isVideo = sourceType === "video" || sourceType === "youtube";
 
   if (!text || text.trim().length < 50) {
     res.status(400).json({ error: "Text is too short. Please provide at least 50 characters of content." });
@@ -200,15 +285,29 @@ router.post("/study/extract", async (req, res) => {
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
 
+  const systemPrompt = isVideo
+    ? `${SYSTEM_PROMPT}
+
+Source Context: The material below is an AUTO-GENERATED YOUTUBE VIDEO TRANSCRIPT.
+- Refer to it as "the video", "the speaker", "the lecture", or "the presenter" — never "the text" or "the document".
+- Use phrasing like "The speaker discusses...", "The presenter explains...", "In the video, ...".
+- Transcripts may contain filler words, stutters, mis-transcribed words, and missing punctuation. Silently correct obvious transcription errors when reconstructing terminology, but never invent facts not implied by the transcript.
+- Preserve the speaker's exact terminology, names, numbers, and step-by-step sequences.`
+    : SYSTEM_PROMPT;
+
+  const userPrefix = isVideo
+    ? "Please extract and structure the key concepts, terminology, and definitions from the following YouTube video transcript:"
+    : "Please extract and structure the keywords and definitions from the following document text:";
+
   try {
     const stream = await openai.chat.completions.create({
       model: "gpt-5.2",
       max_completion_tokens: 8192,
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: systemPrompt },
         {
           role: "user",
-          content: `Please extract and structure the keywords and definitions from the following document text:\n\n${text}`,
+          content: `${userPrefix}\n\n${text}`,
         },
       ],
       stream: true,

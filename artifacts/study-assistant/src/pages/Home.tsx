@@ -13,7 +13,8 @@ import {
   FileText, AlertCircle, Upload, FileUp, X, Loader2,
   Archive, LogIn, LogOut, User, Save, FileDown, HelpCircle, Plus,
   Bot, Globe, ChevronRight, ChevronLeft, BrainCircuit,
-  MessageSquareText, Download, FileBadge, Copy, RefreshCw
+  MessageSquareText, Download, FileBadge, Copy, RefreshCw,
+  Youtube
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Archives from './Archives';
@@ -28,7 +29,8 @@ const STEPS = [
 ];
 
 type AppView = "home" | "archives";
-type InputMode = "upload" | "text";
+type InputMode = "upload" | "text" | "youtube";
+type SourceType = "document" | "video";
 
 interface UploadedFile {
   file: File;
@@ -62,7 +64,12 @@ export default function Home() {
   const [step, setStep] = useState(1);
   const [inputMode, setInputMode] = useState<InputMode>("upload");
   const [input, setInput] = useState("");
+  const [sourceType, setSourceType] = useState<SourceType>("document");
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [youtubeStatus, setYoutubeStatus] = useState<'idle' | 'fetching' | 'done' | 'error'>('idle');
+  const [youtubeError, setYoutubeError] = useState<string | null>(null);
+  const [youtubeVideoId, setYoutubeVideoId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [showQuiz, setShowQuiz] = useState(false);
   const [showAskAI, setShowAskAI] = useState(false);
@@ -129,6 +136,7 @@ export default function Home() {
   const handleFilesSelected = useCallback((newFiles: FileList | File[]) => {
     const fileArr = Array.from(newFiles);
     const ufList: UploadedFile[] = fileArr.map(f => ({ file: f, status: 'pending' }));
+    setSourceType('document');
     setUploadedFiles(prev => {
       const merged = [...prev, ...ufList];
       parseAndMergeFiles(merged);
@@ -145,13 +153,38 @@ export default function Home() {
   const handleGenerate = () => {
     if (!input.trim()) return;
     setWebContent(''); setWebSources([]);
-    generate(input);
+    generate(input, sourceType);
   };
 
   const handleClear = () => {
     setInput(''); setUploadedFiles([]); setWebContent(''); setWebSources([]);
+    setYoutubeUrl(''); setYoutubeStatus('idle'); setYoutubeError(null); setYoutubeVideoId(null);
+    setSourceType('document');
     clear(); setSavingState('idle'); setStep(1);
   };
+
+  const handleFetchYoutube = useCallback(async () => {
+    const url = youtubeUrl.trim();
+    if (!url) return;
+    setYoutubeStatus('fetching');
+    setYoutubeError(null);
+    try {
+      const res = await fetch('/api/study/youtube-transcript', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'Failed to fetch transcript.');
+      setInput(data.text);
+      setSourceType('video');
+      setYoutubeVideoId(data.videoId ?? null);
+      setYoutubeStatus('done');
+    } catch (e: unknown) {
+      setYoutubeStatus('error');
+      setYoutubeError(e instanceof Error ? e.message : 'Failed to fetch transcript.');
+    }
+  }, [youtubeUrl]);
 
   const handleCopy = () => {
     if (!output) return;
@@ -371,11 +404,13 @@ export default function Home() {
               <div className="bg-card border border-border/60 rounded-2xl shadow-xl p-8">
                 {/* Mode toggle */}
                 <div className="flex justify-center mb-6">
-                  <div className="inline-flex bg-muted/60 border border-border/50 p-1 rounded-xl gap-1">
-                    {(['upload', 'text'] as const).map((mode) => (
+                  <div className="inline-flex bg-muted/60 border border-border/50 p-1 rounded-xl gap-1 flex-wrap">
+                    {(['upload', 'youtube', 'text'] as const).map((mode) => (
                       <button key={mode} onClick={() => setInputMode(mode)}
                         className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${inputMode === mode ? 'bg-background shadow text-foreground border border-border/60' : 'text-muted-foreground hover:text-foreground'}`}>
-                        {mode === 'upload' ? <><Upload className="w-3.5 h-3.5 inline mr-1.5" />Upload Files</> : <><FileText className="w-3.5 h-3.5 inline mr-1.5" />Paste Text</>}
+                        {mode === 'upload' && <><Upload className="w-3.5 h-3.5 inline mr-1.5" />Upload Files</>}
+                        {mode === 'youtube' && <><Youtube className="w-3.5 h-3.5 inline mr-1.5" />YouTube</>}
+                        {mode === 'text' && <><FileText className="w-3.5 h-3.5 inline mr-1.5" />Paste Text</>}
                       </button>
                     ))}
                   </div>
@@ -417,13 +452,78 @@ export default function Home() {
                       </div>
                     )}
                   </div>
+                ) : inputMode === 'youtube' ? (
+                  <div>
+                    <div className="border border-border/60 rounded-xl p-6 bg-background/40">
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-9 h-9 bg-red-500/10 border border-red-500/20 rounded-lg flex items-center justify-center">
+                          <Youtube className="w-5 h-5 text-red-400" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-foreground text-sm">YouTube Video</p>
+                          <p className="text-xs text-muted-foreground">We'll fetch the transcript and treat it like any other source.</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          type="url"
+                          value={youtubeUrl}
+                          onChange={(e) => { setYoutubeUrl(e.target.value); setYoutubeStatus('idle'); setYoutubeError(null); }}
+                          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleFetchYoutube(); } }}
+                          placeholder="https://www.youtube.com/watch?v=..."
+                          className="flex-1 bg-background border border-border/60 rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/50"
+                        />
+                        <Button
+                          onClick={handleFetchYoutube}
+                          disabled={!youtubeUrl.trim() || youtubeStatus === 'fetching'}
+                          className="gap-1.5"
+                        >
+                          {youtubeStatus === 'fetching' ? (
+                            <><Loader2 className="w-4 h-4 animate-spin" /> Fetching</>
+                          ) : (
+                            <><Plus className="w-4 h-4" /> Load</>
+                          )}
+                        </Button>
+                      </div>
+
+                      {youtubeStatus === 'done' && (
+                        <div className="mt-4 flex items-center gap-3 p-3 bg-background border border-border/60 rounded-xl">
+                          <div className="p-1.5 bg-red-500/10 rounded-lg border border-red-500/20">
+                            <Youtube className="w-4 h-4 text-red-400" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-foreground truncate">
+                              Transcript loaded{youtubeVideoId ? ` · ${youtubeVideoId}` : ''}
+                            </p>
+                            <p className="text-xs text-green-400 flex items-center gap-1">
+                              <CheckCheck className="w-3 h-3" /> {input.split(/\s+/).filter(Boolean).length.toLocaleString()} words ready
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => { setInput(''); setYoutubeStatus('idle'); setYoutubeVideoId(null); setSourceType('document'); }}
+                            className="text-muted-foreground hover:text-destructive p-1 rounded hover:bg-destructive/10 transition-colors"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
+
+                      {youtubeStatus === 'error' && youtubeError && (
+                        <div className="mt-4 flex items-start gap-2 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-xl px-4 py-3">
+                          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                          <span>{youtubeError}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 ) : (
                   <div className="relative">
                     <div className="absolute top-3 right-3 z-10 text-xs text-muted-foreground font-mono bg-muted/60 border border-border/40 px-2 py-1 rounded-md">
                       {input.length.toLocaleString()} chars
                     </div>
                     <Textarea
-                      value={input} onChange={(e) => setInput(e.target.value)}
+                      value={input}
+                      onChange={(e) => { setInput(e.target.value); setSourceType('document'); }}
                       placeholder="Paste your notes or lecture transcript here..."
                       className="h-56 resize-none pt-10 bg-background"
                     />
@@ -434,7 +534,7 @@ export default function Home() {
               <div className="flex justify-end mt-6">
                 <Button
                   onClick={() => setStep(2)}
-                  disabled={isParsing || (inputMode === 'upload' ? uploadedFiles.filter(f => f.status === 'done').length === 0 : !input.trim())}
+                  disabled={isParsing || youtubeStatus === 'fetching' || (inputMode === 'upload' ? uploadedFiles.filter(f => f.status === 'done').length === 0 : !input.trim())}
                   size="lg"
                   className="gap-2 px-8 text-base"
                 >
