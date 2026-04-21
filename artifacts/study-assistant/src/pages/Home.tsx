@@ -767,7 +767,7 @@ export default function Home() {
       </main>
       <footer className="relative z-10 border-t border-border/40">
         <div className="container mx-auto px-4 lg:px-8 h-12 flex items-center justify-between text-xs text-muted-foreground">
-          <span className="font-serif font-medium text-foreground/40">Curtly</span>
+          <span className="font-serif font-medium text-foreground/40">Build: 04222026</span>
           <span>Developed by VKM · Powered by Gemini</span>
         </div>
       </footer>
