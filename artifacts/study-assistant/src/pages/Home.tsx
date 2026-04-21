@@ -315,7 +315,7 @@ export default function Home() {
       <header className="sticky top-0 z-50 w-full backdrop-blur-xl bg-background/80 border-b border-border/60">
         <div className="container mx-auto px-4 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <img src={curtlyLogo} alt="Curtly" className="w-9 h-9 rounded-lg object-contain" />
+            <img src={curtlyLogo} alt="Curtly" className="w-11 h-11 rounded-lg object-contain" />
             <span className="text-xl font-serif font-bold tracking-tight text-foreground">Curtly</span>
           </div>
           <div className="flex items-center gap-2">
