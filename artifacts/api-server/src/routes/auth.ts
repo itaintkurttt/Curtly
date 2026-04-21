@@ -7,6 +7,7 @@ import {
   LogoutMobileSessionResponse,
 } from "@workspace/api-zod";
 import { db, usersTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
 import {
   clearSession,
   getOidcConfig,
@@ -61,36 +62,42 @@ function pickString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function normalizeUserId(claims: Record<string, unknown>): string {
-  const sub = pickString(claims.sub);
-  if (sub && /^[0-9a-f-]{36}$/i.test(sub)) return sub;
-  return crypto.randomUUID();
-}
-
 async function upsertUser(claims: Record<string, unknown>) {
-  const userData = {
-    id: normalizeUserId(claims),
-    email: pickString(claims.email),
-    firstName: pickString(claims.first_name) ?? pickString(claims.given_name),
-    lastName: pickString(claims.last_name) ?? pickString(claims.family_name),
-    profileImageUrl: pickString(claims.profile_image_url) ?? pickString(claims.picture),
-  };
+  const email = pickString(claims.email);
+  const firstName =
+    pickString(claims.first_name) ?? pickString(claims.given_name);
+  const lastName =
+    pickString(claims.last_name) ?? pickString(claims.family_name);
+  const profileImageUrl =
+    pickString(claims.profile_image_url) ?? pickString(claims.picture);
 
-  const [user] = await db
+  if (email) {
+    const existing = await db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.email, email))
+      .limit(1);
+
+    if (existing[0]) {
+      const [updated] = await db
+        .update(usersTable)
+        .set({
+          firstName,
+          lastName,
+          profileImageUrl,
+          updatedAt: new Date(),
+        })
+        .where(eq(usersTable.id, existing[0].id))
+        .returning();
+      return updated;
+    }
+  }
+
+  const [created] = await db
     .insert(usersTable)
-    .values(userData)
-    .onConflictDoUpdate({
-      target: usersTable.id,
-      set: {
-        email: userData.email,
-        firstName: userData.firstName,
-        lastName: userData.lastName,
-        profileImageUrl: userData.profileImageUrl,
-        updatedAt: new Date(),
-      },
-    })
+    .values({ email, firstName, lastName, profileImageUrl })
     .returning();
-  return user;
+  return created;
 }
 
 router.get("/auth/user", (req: Request, res: Response) => {
