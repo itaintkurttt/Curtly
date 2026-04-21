@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Archives from './Archives';
-import curtlyLogo from '@assets/Gemini_Generated_Image_lk6mpmlk6mpmlk6m__1_-removebg-preview_1776800403136.png';
+import curtlyLogo from '@assets/image_1776800677557.png';
 
 const ACCEPTED_TYPES = ".pdf,.docx,.doc,.pptx,.ppt,.jpg,.jpeg,.png,.webp,.gif,.bmp";
 const ACCEPTED_LABELS = "PDF, DOCX, PPTX, JPG, PNG, WebP";
