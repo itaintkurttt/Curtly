@@ -1,4 +1,6 @@
 streamlit
 google-generativeai
 youtube-transcript-api
-pillow
+Pillow
+PyPDF2
+python-docx
