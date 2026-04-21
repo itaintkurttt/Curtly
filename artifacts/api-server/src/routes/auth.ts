@@ -63,10 +63,8 @@ function pickString(value: unknown): string | null {
 
 function normalizeUserId(claims: Record<string, unknown>): string {
   const sub = pickString(claims.sub);
-  if (sub) return sub;
-  const email = pickString(claims.email);
-  if (email) return email;
-  return crypto.randomBytes(16).toString("hex");
+  if (sub && /^[0-9a-f-]{36}$/i.test(sub)) return sub;
+  return crypto.randomUUID();
 }
 
 async function upsertUser(claims: Record<string, unknown>) {
