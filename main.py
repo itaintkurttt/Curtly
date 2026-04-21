@@ -65,4 +65,62 @@ with tab3:
             with st.spinner("Scanning with Vision..."):
                 # This uses the Gemini Vision model
                 st.write("Vision engine online.")
+import streamlit as st
+import google.generativeai as genai
+from youtube_transcript_api import YouTubeTranscriptApi
 
+# --- 1. CONFIGURATION ---
+st.set_page_config(page_title="Curtly v2", page_icon="🦉")
+
+if "GEMINI_API_KEY" in st.secrets:
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    model = genai.GenerativeModel('gemini-1.5-flash')
+else:
+    st.error("API Key missing!")
+
+# --- 2. GREETING MODAL ---
+@st.dialog("What's New in Curtly v2")
+def show_update():
+    st.markdown("### **Build: 04222026**\n* 🚀 Faster Engine\n* 📺 YouTube Support\n* 📸 Image Reviewer")
+    if st.button("Start Studying"):
+        st.session_state.seen_update = True
+        st.rerun()
+
+if "seen_update" not in st.session_state:
+    show_update()
+
+# --- 3. MAIN UI ---
+st.title("🦉 Curtly v2.0")
+
+tab1, tab2, tab3 = st.tabs(["📄 Upload File", "🔗 YouTube Link", "📸 Image"])
+
+with tab1:
+    uploaded_file = st.file_uploader("Upload academic module", type=["pdf", "docx", "txt"])
+    if uploaded_file and st.button("Generate Reviewer"):
+        with st.spinner("Analyzing..."):
+            # Simple prompt for immediate testing
+            content = uploaded_file.read().decode("utf-8", errors="ignore")
+            response = model.generate_content(f"Summarize this academic material into a reviewer: {content}")
+            st.markdown(response.text)
+
+with tab2:
+    yt_link = st.text_input("Paste YouTube Link")
+    if yt_link and st.button("Extract Notes"):
+        with st.spinner("Transcribing..."):
+            try:
+                video_id = yt_link.split("v=")[1].split("&")[0]
+                transcript = YouTubeTranscriptApi.get_transcript(video_id)
+                text = " ".join([t['text'] for t in transcript])
+                response = model.generate_content(f"Turn this video transcript into study notes: {text}")
+                st.markdown(response.text)
+            except Exception as e:
+                st.error("Could not get transcript. Make sure the video has captions!")
+
+with tab3:
+    img_file = st.file_uploader("Upload notes photo", type=["png", "jpg", "jpeg"])
+    if img_file and st.button("Read & Summarize"):
+        with st.spinner("Vision engine scanning..."):
+            from PIL import Image
+            img = Image.open(img_file)
+            response = model.generate_content(["Summarize the text in this image:", img])
+            st.markdown(response.text)
